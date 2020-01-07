@@ -5,17 +5,18 @@ from keras.layers.core import Activation, Flatten, Dropout, Dense
 from keras.layers import Input
 from keras import backend as K
 
-class Vgg16:
+class VggNet:
     @staticmethod
     def build(height, width, depth, feat_dim):
         model = Sequential()
         input_shape = (height, width, depth)
+        # could be used in batch normalization
         chanDim = -1 # channel lies in the last dim
         if K.image_data_format() == "channels_first":
-            inputShape = (depth, height, width)
+            input_shape = (depth, height, width)
             chanDim = 1
         # block_1
-        model.add(Conv2D(64, (3,3), padding='same'))#, input_shape=input_shape
+        model.add(Conv2D(64, (3,3), padding='same', input_shape=input_shape))#
         model.add(Activation('relu'))
         model.add(Conv2D(64, (3,3), padding='same'))
         model.add(Activation('relu'))
@@ -67,11 +68,7 @@ class Vgg16:
 
 
 def main():
-
-    inputs = Input(shape=(178, 178, 3))
-    vggnet = Vgg16.build(178, 178, 3, 80)
-    feat = vggnet(inputs)
-    model = Model(inputs=inputs, outputs=feat)
+    model = VggNet.build(128, 128, 3, 80)
     model.summary()
 
 if __name__ == '__main__':
