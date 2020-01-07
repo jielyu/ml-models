@@ -100,11 +100,11 @@ def evaluate(args):
 DATASET_HOME = os.path.expanduser('~/Database/Dataset')
 DATASET_PATH = os.path.join(DATASET_HOME, 'CelebA-dataset')
 # default model path
-MODEL_SAVE_PATH = os.path.join('output', 'model', 'celeba.model')
+MODEL_SAVE_PATH = os.path.join('output', 'model', 'vggnet_on_celeba.model')
 # default path of label2idx map
-LABELBIN_SAVE = os.path.join('output', 'label', 'celeba.json')
+LABELBIN_SAVE = os.path.join('output', 'label', 'celeba_attrs.json')
 # default curve file path
-LOSS_PLOT_PATH = os.path.join('output', 'celeba_acc_and_loss.png')   
+LOSS_PLOT_PATH = os.path.join('output', 'vgg_celeba_acc_loss.png')   
 # default input image shape
 TARGET_SHAPE = (128, 128, 3)
 def parse_args():
