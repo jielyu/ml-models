@@ -11,7 +11,7 @@ def check_path(path_name):
         raise ValueError('not exist path:{}'.format(path_name))
 
 
-def get_and_split_dataset(dataset_dir):
+def get_and_split_dataset(dataset_dir, valid_cols=[]):
     # get path and check existence
     attr_path = os.path.join(dataset_dir, 'Anno', 'list_attr_celeba.txt')
     check_path(attr_path)
@@ -34,7 +34,11 @@ def get_and_split_dataset(dataset_dir):
     train_df = df.loc[df['partition'] == 0].drop(['partition'], axis=1)
     val_df = df.loc[df['partition'] == 1].drop(['partition'], axis=1)
     test_df = df.loc[df['partition'] == 2].drop(['partition'], axis=1)
-    train_df, val_df, test_df = train_df[['Male']], val_df[['Male']], test_df[['Male']]
+    # select chosen attributes
+    if valid_cols is not None \
+        and isinstance(valid_cols, list) and len(valid_cols) > 0:
+        train_df, val_df, test_df = \
+            train_df[valid_cols], val_df[valid_cols], test_df[valid_cols]
     return img_dir, train_df, val_df, test_df
 
 def center_crop_index(origin_len, crop_len):
@@ -52,7 +56,8 @@ def center_crop(img, crop_size):
 
 class Dataset:
 
-    def __init__(self, img_dir, df, batch_size=32, target_shape=(128, 128, 3), shuffle=False):
+    def __init__(self, img_dir, df, batch_size=32, \
+                       target_shape=(128, 128, 3), shuffle=False):
         self.img_dir = img_dir
         self.img_names = df.index.values
         self.labels = df.values
@@ -70,16 +75,25 @@ class Dataset:
     def get_attr_num(self):
         return len(self.attrs)
 
+    def get_attrs(self):
+        return self.attrs
+
     def get_target_shape(self):
         return self.target_shape
+
+    def get_batch_num(self):
+        # compute number of batches in an epoch
+        num_samples = self.get_dataset_size()
+        num_batch = num_samples // self.batch_size
+        if num_batch * self.batch_size < num_samples:
+            num_batch += 1
+        return num_batch
 
     def generate(self, epoch_stop=False):
         # compute number of batches in an epoch
         num_samples = self.get_dataset_size()
         all_idx = list(range(num_samples))
-        num_batch = num_samples // self.batch_size
-        if num_batch * self.batch_size < num_samples:
-            num_batch += 1
+        num_batch = self.get_batch_num()
         # generate samples batch by batch
         tgt_size = (self.target_shape[1], self.target_shape[0])
         crop_size = (178, 178)
@@ -87,6 +101,7 @@ class Dataset:
             if self.shuffle is True:
                 random.shuffle(all_idx)
             for i in range(num_batch):
+                #i = 0
                 # compute start and end index on all_idx
                 start_idx = i * self.batch_size
                 tmp_idx = (i+1) * self.batch_size
@@ -123,7 +138,9 @@ class Dataset:
                 break
 
 def create_dataset(dataset_dir, batch_size=32, target_shape=(128,128,3)):
+    # get image directory and data frames of datasets
     img_dir, train_df, val_df, test_df = get_and_split_dataset(dataset_dir)
+    # create trainset, valset, testset
     trainset = Dataset(img_dir, train_df, batch_size, target_shape, True)
     valset = Dataset(img_dir, val_df, batch_size, target_shape, False)
     testset = Dataset(img_dir, test_df, batch_size, target_shape, False)
@@ -134,16 +151,19 @@ def main():
     # create dataset
     dataset_dir = os.path.expanduser('~/Database/Dataset/CelebA-dataset')
     trainset, valset, testset = create_dataset(dataset_dir)
-
+    print(trainset.get_batch_num())
+    print(valset.get_batch_num())
+    print(testset.get_batch_num())
     # check generator
     cnt = 0
     for images, labels in trainset.generate(epoch_stop=True):
         cnt += 1
         print(cnt, images.shape, labels.shape)
-        print(images.dtype, labels.dtype, labels[0,...])
-        plt.imshow(images[0, ...])
+        print(images.dtype, labels.dtype, labels[-1,...])
+        plt.imshow(images[-1, ...])
         plt.show()
-        break
+        if cnt >= 10:
+            break
 
 if __name__ == '__main__':
     main()

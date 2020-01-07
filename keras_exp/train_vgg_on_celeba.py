@@ -1,40 +1,41 @@
 import os, time, random, argparse, pickle, json
+import numpy as np
 import matplotlib
 # uncomment if run in terminal
 #matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 # uncomment if would like to run on plaidml backend
-os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
-from keras.callbacks import Callback, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, CSVLogger
+#os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
+from keras.callbacks import Callback, EarlyStopping, \
+    ReduceLROnPlateau, ModelCheckpoint, CSVLogger
 from keras.preprocessing.image import ImageDataGenerator
 from keras.optimizers import Adam
 from keras.preprocessing.image import img_to_array
 from keras.models import load_model, Model
 from keras.layers import Input,Reshape, Activation
-from keras_exp.model.vgg16 import Vgg16
+from keras_exp.model.vggnet import VggNet
 
 from dataset.celeba import create_dataset
+from utils.utils import check_dir
 
 def train(args):
     # create dataset
-    trainset, valset, testset = create_dataset(args.dataset_dir, args.batch_size, TARGET_SHAPE)
+    trainset, valset, _ = create_dataset(
+        args.dataset_dir, args.batch_size, TARGET_SHAPE)
+    # dump attrs
+    with open(args.label_path, 'w') as wfid:
+        wfid.write(json.dumps(trainset.get_attrs()))
     # create vggnet
     ishape = trainset.get_target_shape()
     num_attrs, num_cates = trainset.get_attr_num(), trainset.get_cate_num()
     feat_dim =  num_attrs * num_cates 
-    vggnet = Vgg16.build(ishape[0], ishape[1], ishape[2], feat_dim)
-    # extract features from vggnet
-    input_x = Input(shape=ishape)
-    feat = vggnet(input_x)
+    model = VggNet.build(ishape[0], ishape[1], ishape[2], feat_dim)
     # reshape to the same shape with labels
-    if 1 == num_attrs:
-        preds = feat
-    else:
-        preds = Reshape((num_attrs, num_cates))(feat)
-    outputs = Activation('softmax')(preds)
-    # construct model and config parameters of solver 
-    model = Model(inputs=input_x, outputs=outputs)
-    opt = Adam(lr=args.init_lr, decay=args.init_lr / args.epochs)
+    if 1 != num_attrs:
+        model.add(Reshape((num_attrs, num_cates)))
+    model.add(Activation('softmax'))
+    # config parameters of solver 
+    opt = Adam(lr=args.init_lr)
     loss = 'categorical_crossentropy'
     model.compile(loss=loss, optimizer=opt, metrics=["accuracy"])
     model.summary()
@@ -46,22 +47,53 @@ def train(args):
                 save_best_only=True,
                 verbose=1),
             # EarlyStopping(patience=50),
-            ReduceLROnPlateau(patience=10),
+            # ReduceLROnPlateau(patience=10),
             CSVLogger("training.log")]
 
     # train model
+    if args.goon_train and os.path.exists(args.model_path):
+        model.load_weights(args.model_path)
     H = model.fit_generator(
         trainset.generate(),
-        steps_per_epoch=trainset.get_dataset_size() // args.batch_size,
+        steps_per_epoch=trainset.get_batch_num(),
         validation_data=valset.generate(),
-        validation_steps=valset.get_dataset_size() // args.batch_size,
+        validation_steps=valset.get_batch_num(),
         epochs=args.epochs,
         verbose=1,
         callbacks=callbacks)
-
+    # plot curve
+    plt.style.use("ggplot")
+    plt.figure()
+    N = args.epochs
+    plt.plot(np.arange(0, N), H.history['loss'], label='train_loss')
+    plt.plot(np.arange(0, N), H.history['val_loss'], label='val_loss')
+    plt.plot(np.arange(0, N), H.history['acc'], label='train_acc')
+    plt.plot(np.arange(0, N), H.history['val_acc'], label='val_acc')
+    plt.title("Training Loss and Accuracy")
+    plt.xlabel("Epoch #")
+    plt.ylabel("Loss/Accuracy")
+    plt.legend(loc="upper left")
+    plt.savefig(args.plot_path)
+    
 
 def evaluate(args):
-    pass
+    # create dataset
+    _, _, testset = create_dataset(
+        args.dataset_dir, args.batch_size, TARGET_SHAPE)
+    # load model
+    model = load_model(args.model_path) 
+    # evaluate
+    ret = model.evaluate_generator(
+        testset.generate(),
+        steps=testset.get_batch_num(),
+        verbose=1
+    )
+    print('evaluate on testset: loss={}, acc={}'.format(ret[0], ret[1]))
+    # for images, labels in testset.generate(epoch_stop=True):
+    #     preds = model.predict(images)
+    #     print(np.argmax(preds, axis=-1))
+    #     print(np.argmax(labels, axis=-1))
+    #     break
 
 
 # default dataset dir
@@ -72,28 +104,9 @@ MODEL_SAVE_PATH = os.path.join('output', 'model', 'celeba.model')
 # default path of label2idx map
 LABELBIN_SAVE = os.path.join('output', 'label', 'celeba.json')
 # default curve file path
-LOSS_PLOT_PATH = os.path.join('output', 'accuracy_and_loss.png')   
+LOSS_PLOT_PATH = os.path.join('output', 'celeba_acc_and_loss.png')   
 # default input image shape
 TARGET_SHAPE = (128, 128, 3)
-def check_dir(dirname, report_error=False):
-    """ Check existence of specific directory
-    Args:
-        dirname: path to specific directory
-        report_error: if it is True, error will be report when dirname not exists
-                      if it is False, directory will be created when dirnam not exists
-    Return:
-        None
-    Raise:
-        ValueError, if report_error is True and dirname not exists 
-    """
-    if not os.path.exists(dirname):
-        if report_error is True:
-            raise ValueError('not exist directory: {}'.format(dirname))
-        else:
-            os.makedirs(dirname)
-            print('not exist {}, but has been created'.format(dirname))
-
-
 def parse_args():
     """ Parse arguments from command line
     """
@@ -110,10 +123,12 @@ def parse_args():
                     help='batch size')
     ap.add_argument('-e', '--epochs', type=int, default=100, 
                     help='number of epochs')
-    ap.add_argument('-i', '--init-lr', type=float, default=1e-3)
+    ap.add_argument('-i', '--init-lr', type=float, default=1e-5)
     ap.add_argument('--phase', type=str, default='train', 
                     choices=['train', 'evaluate'], 
                     help='specify operations, train or evaluate')
+    ap.add_argument('--goon-train', type=bool, default=False, 
+                    help='load old model and go on training')
     args = ap.parse_args()
     # check args
     check_dir(args.dataset_dir, report_error=True)
