@@ -29,7 +29,8 @@ def train(args):
     ishape = trainset.get_target_shape()
     num_attrs, num_cates = trainset.get_attr_num(), trainset.get_cate_num()
     feat_dim =  num_attrs * num_cates 
-    model = VggNet.build(ishape[0], ishape[1], ishape[2], feat_dim)
+    model = VggNet.build(
+            ishape[0], ishape[1], ishape[2], feat_dim, bn=args.batch_normalize)
     # reshape to the same shape with labels
     if 1 != num_attrs:
         model.add(Reshape((num_attrs, num_cates)))
@@ -129,6 +130,8 @@ def parse_args():
                     help='specify operations, train or evaluate')
     ap.add_argument('--goon-train', type=bool, default=False, 
                     help='load old model and go on training')
+    ap.add_argument('--batch-normalize', type=bool, default=True,
+                    help='add batch normalization layers after activations')
     args = ap.parse_args()
     # check args
     check_dir(args.dataset_dir, report_error=True)
