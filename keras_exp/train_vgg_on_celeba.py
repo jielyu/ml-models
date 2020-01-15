@@ -5,7 +5,7 @@ import matplotlib
 #matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 # uncomment if would like to run on plaidml backend
-#os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
+os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
 from keras.callbacks import Callback, EarlyStopping, \
     ReduceLROnPlateau, ModelCheckpoint, CSVLogger
 from keras.preprocessing.image import ImageDataGenerator
@@ -30,7 +30,8 @@ def train(args):
     num_attrs, num_cates = trainset.get_attr_num(), trainset.get_cate_num()
     feat_dim =  num_attrs * num_cates 
     model = VggNet.build(
-            ishape[0], ishape[1], ishape[2], feat_dim, bn=args.batch_normalize)
+            ishape[0], ishape[1], ishape[2], feat_dim, 
+            bn=args.batch_normalize, dropout=args.dropout)
     # reshape to the same shape with labels
     if 1 != num_attrs:
         model.add(Reshape((num_attrs, num_cates)))
@@ -49,7 +50,7 @@ def train(args):
                 verbose=1),
             # EarlyStopping(patience=50),
             # ReduceLROnPlateau(patience=10),
-            CSVLogger("training.log")]
+            CSVLogger(args.trainlog_path)]
 
     # train model
     if args.goon_train and os.path.exists(args.model_path):
@@ -105,7 +106,8 @@ MODEL_SAVE_PATH = os.path.join('output', 'model', 'vggnet_on_celeba.model')
 # default path of label2idx map
 LABELBIN_SAVE = os.path.join('output', 'label', 'celeba_attrs.json')
 # default curve file path
-LOSS_PLOT_PATH = os.path.join('output', 'vgg_celeba_acc_loss.png')   
+LOSS_PLOT_PATH = os.path.join('output', 'vgg_celeba_acc_loss.png')
+TRAIN_LOG_PATH =  os.path.join('output', 'train_vgg_celeba.log.csv')  
 # default input image shape
 TARGET_SHAPE = (128, 128, 3)
 def parse_args():
@@ -120,9 +122,11 @@ def parse_args():
                     help="path to output label binarizer")
     ap.add_argument('-p', '--plot-path', type=str, default=LOSS_PLOT_PATH,
                     help="path to output accuracy/loss plot")
+    ap.add_argument('--trainlog-path', type=str, default=TRAIN_LOG_PATH,
+                    help='path to training log')
     ap.add_argument('-b', '--batch-size', type=int, default=64, 
                     help='batch size')
-    ap.add_argument('-e', '--epochs', type=int, default=100, 
+    ap.add_argument('-e', '--epochs', type=int, default=20, 
                     help='number of epochs')
     ap.add_argument('-i', '--init-lr', type=float, default=1e-5)
     ap.add_argument('--phase', type=str, default='train', 
@@ -132,12 +136,15 @@ def parse_args():
                     help='load old model and go on training')
     ap.add_argument('--batch-normalize', type=bool, default=True,
                     help='add batch normalization layers after activations')
+    ap.add_argument('--dropout', type=float, default=0.25, 
+                    help='dropout probability on training')
     args = ap.parse_args()
     # check args
     check_dir(args.dataset_dir, report_error=True)
     check_dir(os.path.dirname(args.model_path))
     check_dir(os.path.dirname(args.label_path))
     check_dir(os.path.dirname(args.plot_path))
+    check_dir(os.path.dirname(args.trainlog_path))
     return args
 
 
