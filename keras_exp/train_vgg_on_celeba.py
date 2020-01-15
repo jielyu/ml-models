@@ -2,10 +2,10 @@ import os, time, random, argparse, pickle, json
 import numpy as np
 import matplotlib
 # uncomment if run in terminal
-#matplotlib.use("Agg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 # uncomment if would like to run on plaidml backend
-os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
+#os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
 from keras.callbacks import Callback, EarlyStopping, \
     ReduceLROnPlateau, ModelCheckpoint, CSVLogger
 from keras.preprocessing.image import ImageDataGenerator
