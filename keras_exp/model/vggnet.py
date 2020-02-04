@@ -2,8 +2,9 @@ from keras.models import Sequential, Model
 from keras.layers.normalization import BatchNormalization
 from keras.layers.convolutional import Conv2D, MaxPooling2D
 from keras.layers.core import Activation, Flatten, Dropout, Dense
-from keras.layers import Input
+from keras.layers import Input, Reshape
 from keras import backend as K
+from keras.utils import plot_model
 
 class VggNet:
     @staticmethod
@@ -121,7 +122,10 @@ class VggNet:
 
 def main():
     model = VggNet.build(128, 128, 3, 80, bn=True, dropout=0.25)
+    model.add(Reshape((40, 2)))
+    model.add(Activation('softmax'))
     model.summary()
+    plot_model(model, 'output/vggnet.png', show_shapes=True)
 
 if __name__ == '__main__':
     main()
