@@ -1,6 +1,8 @@
 # ml-models
 To store code for machine learning experiments
 
+# 仓库前移至 [ml-models](https://github.com/jielyu/ml-models)
+
 ## 实验列表 Experiments List
 |序号 ID|实验名 Experiment Name |精度 Acc| 框架 Framework| 代码 Code |数据集 Dataset|备注 Mark|
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|
