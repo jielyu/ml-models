@@ -1,12 +1,17 @@
 
-import os, time, random, argparse, pickle, json
+import os
+import time
+import random
+import argparse
+import pickle
+import json
 from collections import defaultdict
 import cv2
 from imutils import paths
 import numpy as np
 import matplotlib
 # uncomment if run in terminal
-#matplotlib.use("Agg")
+# matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 # uncomment if would like to run on plaidml backend
 #os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
@@ -15,8 +20,97 @@ from keras.preprocessing.image import ImageDataGenerator
 from keras.optimizers import Adam
 from keras.preprocessing.image import img_to_array
 from keras.models import load_model
-from keras_exp.model.smallervggnet import SmallerVGGNet
-from utils.utils import check_dir
+from keras.models import Sequential
+from keras.layers.normalization import BatchNormalization
+from keras.layers.convolutional import Conv2D, MaxPooling2D
+from keras.layers.core import Activation, Flatten, Dropout, Dense
+from keras import backend as K
+from keras.utils import plot_model
+
+
+def check_dir(dirname, report_error=False):
+    """ Check existence of specific directory
+    Args:
+        dirname: path to specific directory
+        report_error: if it is True, error will be report when dirname not exists
+                      if it is False, directory will be created when dirnam not exists
+    Return:
+        None
+    Raise:
+        ValueError, if report_error is True and dirname not exists 
+    """
+    if not os.path.exists(dirname):
+        if report_error is True:
+            raise ValueError('not exist directory: {}'.format(dirname))
+        else:
+            os.makedirs(dirname)
+            print('not exist {}, but has been created'.format(dirname))
+
+
+class SmallerVGGNet():
+    @staticmethod
+    def build(width, height, depth, classes):
+        model = Sequential()
+        inputShape = (height, width, depth)
+        chanDim = -1  # channel lies in the last dim
+
+        if K.image_data_format() == "channels_first":
+            inputShape = (depth, height, width)
+            chanDim = 1
+        # block_1
+        model.add(Conv2D(32, (3, 3), padding="same", input_shape=inputShape))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization(axis=chanDim))
+        model.add(MaxPooling2D(pool_size=(3, 3)))
+        model.add(Dropout(0.25))
+        # block_2
+        model.add(Conv2D(64, (3, 3), padding="same", input_shape=inputShape))
+        model.add(Activation("relu"))
+        model.add(BatchNormalization(axis=chanDim))
+        model.add(Conv2D(64, (3, 3), padding="same", input_shape=inputShape))
+        model.add(Activation("relu"))
+        model.add(BatchNormalization(axis=chanDim))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Dropout(0.25))
+        # block_3
+        model.add(Conv2D(128, (3, 3), padding="same", input_shape=inputShape))
+        model.add(Activation("relu"))
+        model.add(BatchNormalization(axis=chanDim))
+        model.add(Conv2D(128, (3, 3), padding="same", input_shape=inputShape))
+        model.add(Activation("relu"))
+        model.add(BatchNormalization(axis=chanDim))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Dropout(0.25))
+        # block_4
+        model.add(Conv2D(256, (3, 3), padding="same", input_shape=inputShape))
+        model.add(Activation("relu"))
+        model.add(BatchNormalization(axis=chanDim))
+        model.add(Conv2D(256, (3, 3), padding="same", input_shape=inputShape))
+        model.add(Activation("relu"))
+        model.add(BatchNormalization(axis=chanDim))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Dropout(0.25))
+        # block_5
+        model.add(Conv2D(512, (3, 3), padding="same", input_shape=inputShape))
+        model.add(Activation("relu"))
+        model.add(BatchNormalization(axis=chanDim))
+        model.add(Conv2D(512, (3, 3), padding="same", input_shape=inputShape))
+        model.add(Activation("relu"))
+        model.add(BatchNormalization(axis=chanDim))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Dropout(0.25))
+        # fully-connected layer
+        model.add(Flatten())
+        model.add(Dense(1024))
+        model.add(Activation("relu"))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.5))
+        # predict probabilities for all categories
+        model.add(Dense(classes))
+        model.add(Activation("softmax"))
+
+        return model
+
 
 def get_label_name(image_path):
     """ Get label name from image path
@@ -25,6 +119,7 @@ def get_label_name(image_path):
     if len(items) < 2:
         raise ValueError('invalid image path:{}'.format(image_path))
     return items[-2]
+
 
 def get_and_split_dataset(dataset_dir, test_size=0.2):
     """ Get all data and split it into trainset and testset
@@ -74,8 +169,8 @@ class Dataset:
     """ To provide interface to get sample batch by batch for training and evaluating
     """
 
-    def __init__(self, image_paths, label2idx, idx2label, 
-                     target_shape=(67, 67, 3),batch_size=32, shuffle=False):
+    def __init__(self, image_paths, label2idx, idx2label,
+                 target_shape=(67, 67, 3), batch_size=32, shuffle=False):
         self.image_paths = image_paths
         self.label2idx = label2idx
         self.idx2label = idx2label
@@ -120,11 +215,13 @@ class Dataset:
                 batch_labels = []
                 for image_path in batch_img_paths:
                     image = cv2.imread(image_path)
-                    image = cv2.resize(image, (self.target_shape[1], self.target_shape[0]))
+                    image = cv2.resize(
+                        image, (self.target_shape[1], self.target_shape[0]))
                     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                     image = img_to_array(image) / 255.0
                     batch_images.append(image)
-                    batch_labels.append(self.label2idx[get_label_name(image_path)])
+                    batch_labels.append(
+                        self.label2idx[get_label_name(image_path)])
                 # normalize image data
                 images = np.array(batch_images, dtype='float')
                 labels = np.array(batch_labels)
@@ -144,7 +241,7 @@ def train(args):
         get_and_split_dataset(trainval_dir, test_size=args.test_ratio)
     with open(args.label_path, 'w') as wfid:
         wfid.write(json.dumps(label2idx))
-    
+
     # create augumentation operations
     aug = ImageDataGenerator(
         rotation_range=25, width_shift_range=0.1, height_shift_range=0.1,
@@ -152,33 +249,34 @@ def train(args):
         fill_mode="nearest")
 
     # create generators of trainset and testset
-    trainset = Dataset(image_paths=train_img_paths, 
+    trainset = Dataset(image_paths=train_img_paths,
                        label2idx=label2idx, idx2label=idx2label,
-                       target_shape=TARGET_SHAPE, batch_size=args.batch_size, 
+                       target_shape=TARGET_SHAPE, batch_size=args.batch_size,
                        shuffle=True)
     valset = Dataset(image_paths=test_img_paths,
                      label2idx=label2idx, idx2label=idx2label,
-                     target_shape=TARGET_SHAPE, batch_size=args.batch_size, 
+                     target_shape=TARGET_SHAPE, batch_size=args.batch_size,
                      shuffle=False)
     # build model
     model = SmallerVGGNet.build(width=TARGET_SHAPE[1],
-                            height=TARGET_SHAPE[0],
-                            depth=TARGET_SHAPE[2],
-                            classes=len(label2idx))
+                                height=TARGET_SHAPE[0],
+                                depth=TARGET_SHAPE[2],
+                                classes=len(label2idx))
     opt = Adam(lr=args.init_lr, decay=args.init_lr / args.epochs)
-    model.compile(loss="categorical_crossentropy", optimizer=opt, metrics=["accuracy"])
+    model.compile(loss="categorical_crossentropy",
+                  optimizer=opt, metrics=["accuracy"])
     model.summary()
 
     # create callback
-    callbacks=[
-            ModelCheckpoint(
-                args.model_path,
-                monitor='val_loss',
-                save_best_only=True,
-                verbose=1),
-            # EarlyStopping(patience=50),
-            ReduceLROnPlateau(patience=10),
-            CSVLogger("training.log")]
+    callbacks = [
+        ModelCheckpoint(
+            args.model_path,
+            monitor='val_loss',
+            save_best_only=True,
+            verbose=1),
+        # EarlyStopping(patience=50),
+        ReduceLROnPlateau(patience=10),
+        CSVLogger("training.log")]
 
     # train model
     H = model.fit_generator(
@@ -204,6 +302,7 @@ def train(args):
     plt.legend(loc="upper left")
     plt.savefig(args.plot_path)
 
+
 def evaluate(args):
     """ Evaluate model on testset
     """
@@ -219,12 +318,12 @@ def evaluate(args):
         idx2label[v] = k
     # create dataset
     testset = Dataset(test_img_paths, label2idx=label2idx, idx2label=idx2label,
-                     target_shape=TARGET_SHAPE, batch_size=args.batch_size, 
-                     shuffle=False)
+                      target_shape=TARGET_SHAPE, batch_size=args.batch_size,
+                      shuffle=False)
 
     # load model
     model = load_model(args.model_path)
-    
+
     # get prediction
     error_cnt = 0
     for images, labels in testset.generate(epoch_stop=True):
@@ -248,8 +347,10 @@ def evaluate(args):
                 img = img.astype(np.uint8)
                 cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
     num_samples = testset.get_dataset_size()
-    print('total acc={}%'.format((num_samples - error_cnt)*100 / float(num_samples)))
-        
+    print('total acc={}%'.format(
+        (num_samples - error_cnt)*100 / float(num_samples)))
+
+
 # default dataset dir
 DATASET_HOME = os.path.expanduser('~/Database/Dataset')
 DATASET_PATH = os.path.join(
@@ -259,9 +360,11 @@ MODEL_SAVE_PATH = os.path.join('output', 'model', '12306verifycode.model')
 # default path of label2idx map
 LABELBIN_SAVE = os.path.join('output', 'label', '12306cate.json')
 # default curve file path
-LOSS_PLOT_PATH = os.path.join('output', 'accuracy_and_loss.png')   
+LOSS_PLOT_PATH = os.path.join('output', 'accuracy_and_loss.png')
 # default input image shape
 TARGET_SHAPE = (67, 67, 3)
+
+
 def parse_args():
     """ Parse arguments from command line
     """
@@ -271,18 +374,18 @@ def parse_args():
     ap.add_argument('-t', '--test-ratio', type=float, default=0.2,
                     help='ratio of samples in testset over the whole dataset')
     ap.add_argument('-m', '--model-path', type=str, default=MODEL_SAVE_PATH,
-                    help="path to output model")              
+                    help="path to output model")
     ap.add_argument('-l', '--label_path', type=str, default=LABELBIN_SAVE,
                     help="path to output label binarizer")
     ap.add_argument('-p', '--plot-path', type=str, default=LOSS_PLOT_PATH,
                     help="path to output accuracy/loss plot")
-    ap.add_argument('-b', '--batch-size', type=int, default=128, 
+    ap.add_argument('-b', '--batch-size', type=int, default=128,
                     help='batch size')
     ap.add_argument('-e', '--epochs', type=int, default=25, help='')
     ap.add_argument('-i', '--init-lr', type=float, default=1e-3)
-    ap.add_argument('--phase', type=str, default='train', choices=['train', 'evaluate'], 
+    ap.add_argument('--phase', type=str, default='train', choices=['train', 'evaluate'],
                     help='specify operations, train or evaluate')
-    ap.add_argument('--save-samples', type=bool, default=True, 
+    ap.add_argument('--save-samples', type=bool, default=True,
                     help='flag to indicate whether save samples on evaluating')
     args = ap.parse_args()
     # check args
@@ -291,6 +394,12 @@ def parse_args():
     check_dir(os.path.dirname(args.label_path))
     check_dir(os.path.dirname(args.plot_path))
     return args
+
+
+def test_model_structure():
+    model = SmallerVGGNet.build(67, 67, 3, 80)
+    model.summary()
+    plot_model(model, 'output/smallerbggnet.png', show_shapes=True)
 
 
 def main():
@@ -302,6 +411,7 @@ def main():
     else:
         raise ValueError('not allowed phase[{}]'.format(args.phase))
 
-        
+
 if __name__ == '__main__':
+    # test_model_structure()
     main()
