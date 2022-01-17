@@ -23,8 +23,8 @@ fi
 echo "set batch_size=${bs}"
 #exit
 # modify this variable to start other process
-process_name="keras_exp.train_vgg_on_celeba"
-#process_name="keras_exp.train_smallervgg_on_12306verifycode"
+process_name="src.vgg_on_celeba"
+#process_name="src.smallervgg_on_12306verifycode"
 if [ ${bg} = "yes" ]; then
     python3 -m ${process_name} --phase=${phase} --batch-size=${bs} >out.${phase}.log 2>&1 &
 else

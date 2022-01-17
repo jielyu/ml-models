@@ -53,3 +53,12 @@ train_acc=99.0%, val_acc=99.1%, test_acc=95%
 ## VGG on Celeba
 
 [源码](src/vgg_on_celeba.py)
+
+
+## YoloX
+
+**未完成**
+
+[源码][src/yolox.py]
+
+
