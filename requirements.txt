@@ -3,3 +3,4 @@ opencv-python
 numpy
 keras
 matplotlib
+imutils
