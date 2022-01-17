@@ -49,6 +49,7 @@ def check_dir(dirname, report_error=False):
 
 
 class SmallerVGGNet():
+
     @staticmethod
     def build(width, height, depth, classes):
         model = Sequential()
@@ -149,7 +150,8 @@ def get_and_split_dataset(dataset_dir, test_size=0.2):
     for idx, label_name in enumerate(label_dict.keys()):
         num = label_dict[label_name]
         print('{} cate includes {}/{} samples, {}%'.format(
-            label_name, num, num_samples, float(num)*100/num_samples))
+            label_name, num, num_samples,
+            float(num) * 100 / num_samples))
         label2idx[label_name] = idx
         idx2label[idx] = label_name
     # split trainset and testset
@@ -170,8 +172,13 @@ class Dataset:
     """ To provide interface to get sample batch by batch for training and evaluating
     """
 
-    def __init__(self, image_paths, label2idx, idx2label,
-                 target_shape=(67, 67, 3), batch_size=32, shuffle=False):
+    def __init__(self,
+                 image_paths,
+                 label2idx,
+                 idx2label,
+                 target_shape=(67, 67, 3),
+                 batch_size=32,
+                 shuffle=False):
         self.image_paths = image_paths
         self.label2idx = label2idx
         self.idx2label = idx2label
@@ -207,7 +214,7 @@ class Dataset:
             for i in range(num_batch):
                 # compute start and end index
                 start_idx = i * self.batch_size
-                tmp_idx = (i+1) * self.batch_size
+                tmp_idx = (i + 1) * self.batch_size
                 end_idx = tmp_idx if tmp_idx <= num_samples else num_samples
                 # get a batch of image paths
                 batch_img_paths = self.image_paths[start_idx:end_idx]
@@ -227,7 +234,8 @@ class Dataset:
                 images = np.array(batch_images, dtype='float')
                 labels = np.array(batch_labels)
                 # return generator
-                yield images, np.eye(self.get_num_cates(), dtype='float')[labels]
+                yield images, np.eye(self.get_num_cates(),
+                                     dtype='float')[labels]
             if epoch_stop is True:
                 break
 
@@ -244,19 +252,26 @@ def train(args):
         wfid.write(json.dumps(label2idx))
 
     # create augumentation operations
-    aug = ImageDataGenerator(
-        rotation_range=25, width_shift_range=0.1, height_shift_range=0.1,
-        shear_range=0.2, zoom_range=0.2, horizontal_flip=True,
-        fill_mode="nearest")
+    aug = ImageDataGenerator(rotation_range=25,
+                             width_shift_range=0.1,
+                             height_shift_range=0.1,
+                             shear_range=0.2,
+                             zoom_range=0.2,
+                             horizontal_flip=True,
+                             fill_mode="nearest")
 
     # create generators of trainset and testset
     trainset = Dataset(image_paths=train_img_paths,
-                       label2idx=label2idx, idx2label=idx2label,
-                       target_shape=TARGET_SHAPE, batch_size=args.batch_size,
+                       label2idx=label2idx,
+                       idx2label=idx2label,
+                       target_shape=TARGET_SHAPE,
+                       batch_size=args.batch_size,
                        shuffle=True)
     valset = Dataset(image_paths=test_img_paths,
-                     label2idx=label2idx, idx2label=idx2label,
-                     target_shape=TARGET_SHAPE, batch_size=args.batch_size,
+                     label2idx=label2idx,
+                     idx2label=idx2label,
+                     target_shape=TARGET_SHAPE,
+                     batch_size=args.batch_size,
                      shuffle=False)
     # build model
     model = SmallerVGGNet.build(width=TARGET_SHAPE[1],
@@ -265,19 +280,20 @@ def train(args):
                                 classes=len(label2idx))
     opt = Adam(lr=args.init_lr, decay=args.init_lr / args.epochs)
     model.compile(loss="categorical_crossentropy",
-                  optimizer=opt, metrics=["accuracy"])
+                  optimizer=opt,
+                  metrics=["accuracy"])
     model.summary()
 
     # create callback
     callbacks = [
-        ModelCheckpoint(
-            args.model_path,
-            monitor='val_loss',
-            save_best_only=True,
-            verbose=1),
+        ModelCheckpoint(args.model_path,
+                        monitor='val_loss',
+                        save_best_only=True,
+                        verbose=1),
         # EarlyStopping(patience=50),
         ReduceLROnPlateau(patience=10),
-        CSVLogger("training.log")]
+        CSVLogger("training.log")
+    ]
 
     # train model
     H = model.fit_generator(
@@ -318,8 +334,11 @@ def evaluate(args):
     for k, v in label2idx.items():
         idx2label[v] = k
     # create dataset
-    testset = Dataset(test_img_paths, label2idx=label2idx, idx2label=idx2label,
-                      target_shape=TARGET_SHAPE, batch_size=args.batch_size,
+    testset = Dataset(test_img_paths,
+                      label2idx=label2idx,
+                      idx2label=idx2label,
+                      target_shape=TARGET_SHAPE,
+                      batch_size=args.batch_size,
                       shuffle=False)
 
     # load model
@@ -349,13 +368,12 @@ def evaluate(args):
                 cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
     num_samples = testset.get_dataset_size()
     print('total acc={}%'.format(
-        (num_samples - error_cnt)*100 / float(num_samples)))
+        (num_samples - error_cnt) * 100 / float(num_samples)))
 
 
 # default dataset dir
 DATASET_HOME = os.path.expanduser('~/Database/Dataset')
-DATASET_PATH = os.path.join(
-    DATASET_HOME, '12306verifycode-dataset')
+DATASET_PATH = os.path.join(DATASET_HOME, '12306verifycode-dataset')
 # default model path
 MODEL_SAVE_PATH = os.path.join('output', 'model', '12306verifycode.model')
 # default path of label2idx map
@@ -370,23 +388,46 @@ def parse_args():
     """ Parse arguments from command line
     """
     ap = argparse.ArgumentParser()
-    ap.add_argument('-d', '--dataset-dir', type=str, default=DATASET_PATH,
+    ap.add_argument('-d',
+                    '--dataset-dir',
+                    type=str,
+                    default=DATASET_PATH,
                     help="path to input dataset")
-    ap.add_argument('-t', '--test-ratio', type=float, default=0.2,
+    ap.add_argument('-t',
+                    '--test-ratio',
+                    type=float,
+                    default=0.2,
                     help='ratio of samples in testset over the whole dataset')
-    ap.add_argument('-m', '--model-path', type=str, default=MODEL_SAVE_PATH,
+    ap.add_argument('-m',
+                    '--model-path',
+                    type=str,
+                    default=MODEL_SAVE_PATH,
                     help="path to output model")
-    ap.add_argument('-l', '--label_path', type=str, default=LABELBIN_SAVE,
+    ap.add_argument('-l',
+                    '--label_path',
+                    type=str,
+                    default=LABELBIN_SAVE,
                     help="path to output label binarizer")
-    ap.add_argument('-p', '--plot-path', type=str, default=LOSS_PLOT_PATH,
+    ap.add_argument('-p',
+                    '--plot-path',
+                    type=str,
+                    default=LOSS_PLOT_PATH,
                     help="path to output accuracy/loss plot")
-    ap.add_argument('-b', '--batch-size', type=int, default=128,
+    ap.add_argument('-b',
+                    '--batch-size',
+                    type=int,
+                    default=128,
                     help='batch size')
     ap.add_argument('-e', '--epochs', type=int, default=25, help='')
     ap.add_argument('-i', '--init-lr', type=float, default=1e-3)
-    ap.add_argument('--phase', type=str, default='train', choices=['train', 'evaluate'],
+    ap.add_argument('--phase',
+                    type=str,
+                    default='train',
+                    choices=['train', 'evaluate'],
                     help='specify operations, train or evaluate')
-    ap.add_argument('--save-samples', type=bool, default=True,
+    ap.add_argument('--save-samples',
+                    type=bool,
+                    default=True,
                     help='flag to indicate whether save samples on evaluating')
     args = ap.parse_args()
     # check args
