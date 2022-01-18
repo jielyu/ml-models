@@ -4,14 +4,16 @@
 
 **说明:** 本实现参考或复用项目见github: https://github.com/Megvii-BaseDetection/YOLOX
 """
+from __future__ import absolute_import
 
 import os
 import math
+import random
 import torch
 import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
-import cv2 as cv
+import cv2
 import numpy as np
 from loguru import logger
 
@@ -578,6 +580,121 @@ class CSPDarknet(nn.Module):
         return {k: v for k, v in outputs.items() if k in self.out_features}
 
 
+class YOLOPAFPN(nn.Module):
+    """
+    YOLOv3 model. Darknet 53 is the default backbone of this model.
+    """
+
+    def __init__(
+        self,
+        depth=1.0,
+        width=1.0,
+        in_features=("dark3", "dark4", "dark5"),
+        in_channels=[256, 512, 1024],
+        depthwise=False,
+        act="silu",
+    ):
+        super().__init__()
+        self.backbone = CSPDarknet(depth, width, depthwise=depthwise, act=act)
+        self.in_features = in_features
+        self.in_channels = in_channels
+        Conv = DWConv if depthwise else BaseConv
+
+        self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
+        self.lateral_conv0 = BaseConv(int(in_channels[2] * width),
+                                      int(in_channels[1] * width),
+                                      1,
+                                      1,
+                                      act=act)
+        self.C3_p4 = CSPLayer(
+            int(2 * in_channels[1] * width),
+            int(in_channels[1] * width),
+            round(3 * depth),
+            False,
+            depthwise=depthwise,
+            act=act,
+        )  # cat
+
+        self.reduce_conv1 = BaseConv(int(in_channels[1] * width),
+                                     int(in_channels[0] * width),
+                                     1,
+                                     1,
+                                     act=act)
+        self.C3_p3 = CSPLayer(
+            int(2 * in_channels[0] * width),
+            int(in_channels[0] * width),
+            round(3 * depth),
+            False,
+            depthwise=depthwise,
+            act=act,
+        )
+
+        # bottom-up conv
+        self.bu_conv2 = Conv(int(in_channels[0] * width),
+                             int(in_channels[0] * width),
+                             3,
+                             2,
+                             act=act)
+        self.C3_n3 = CSPLayer(
+            int(2 * in_channels[0] * width),
+            int(in_channels[1] * width),
+            round(3 * depth),
+            False,
+            depthwise=depthwise,
+            act=act,
+        )
+
+        # bottom-up conv
+        self.bu_conv1 = Conv(int(in_channels[1] * width),
+                             int(in_channels[1] * width),
+                             3,
+                             2,
+                             act=act)
+        self.C3_n4 = CSPLayer(
+            int(2 * in_channels[1] * width),
+            int(in_channels[2] * width),
+            round(3 * depth),
+            False,
+            depthwise=depthwise,
+            act=act,
+        )
+
+    def forward(self, input):
+        """
+        Args:
+            inputs: input images.
+
+        Returns:
+            Tuple[Tensor]: FPN feature.
+        """
+
+        #  backbone
+        out_features = self.backbone(input)
+        features = [out_features[f] for f in self.in_features]
+        [x2, x1, x0] = features
+
+        fpn_out0 = self.lateral_conv0(x0)  # 1024->512/32
+        f_out0 = self.upsample(fpn_out0)  # 512/16
+        f_out0 = torch.cat([f_out0, x1], 1)  # 512->1024/16
+        f_out0 = self.C3_p4(f_out0)  # 1024->512/16
+
+        fpn_out1 = self.reduce_conv1(f_out0)  # 512->256/16
+        f_out1 = self.upsample(fpn_out1)  # 256/8
+        f_out1 = torch.cat([f_out1, x2], 1)  # 256->512/8
+        pan_out2 = self.C3_p3(f_out1)  # 512->256/8
+
+        p_out1 = self.bu_conv2(pan_out2)  # 256->256/16
+        p_out1 = torch.cat([p_out1, fpn_out1], 1)  # 256->512/16
+        pan_out1 = self.C3_n3(p_out1)  # 512->512/16
+
+        p_out0 = self.bu_conv1(pan_out1)  # 512->512/32
+        p_out0 = torch.cat([p_out0, fpn_out0], 1)  # 512->1024/32
+        pan_out0 = self.C3_n4(p_out0)  # 1024->1024/32
+
+        outputs = (pan_out2, pan_out1, pan_out0)
+        return outputs
+
+
 class IOUloss(nn.Module):
 
     def __init__(self, reduction="none", loss_type="iou"):
@@ -784,7 +901,8 @@ class YOLOXHead(nn.Module):
                      cls_output.sigmoid()], 1)
 
             outputs.append(output)
-
+        for o in outputs:
+            print('output:{}', o.detach().numpy().shape)
         if self.training:
             return self.get_losses(
                 imgs,
@@ -1226,121 +1344,6 @@ class YOLOXHead(nn.Module):
         return num_fg, gt_matched_classes, pred_ious_this_matching, matched_gt_inds
 
 
-class YOLOPAFPN(nn.Module):
-    """
-    YOLOv3 model. Darknet 53 is the default backbone of this model.
-    """
-
-    def __init__(
-        self,
-        depth=1.0,
-        width=1.0,
-        in_features=("dark3", "dark4", "dark5"),
-        in_channels=[256, 512, 1024],
-        depthwise=False,
-        act="silu",
-    ):
-        super().__init__()
-        self.backbone = CSPDarknet(depth, width, depthwise=depthwise, act=act)
-        self.in_features = in_features
-        self.in_channels = in_channels
-        Conv = DWConv if depthwise else BaseConv
-
-        self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
-        self.lateral_conv0 = BaseConv(int(in_channels[2] * width),
-                                      int(in_channels[1] * width),
-                                      1,
-                                      1,
-                                      act=act)
-        self.C3_p4 = CSPLayer(
-            int(2 * in_channels[1] * width),
-            int(in_channels[1] * width),
-            round(3 * depth),
-            False,
-            depthwise=depthwise,
-            act=act,
-        )  # cat
-
-        self.reduce_conv1 = BaseConv(int(in_channels[1] * width),
-                                     int(in_channels[0] * width),
-                                     1,
-                                     1,
-                                     act=act)
-        self.C3_p3 = CSPLayer(
-            int(2 * in_channels[0] * width),
-            int(in_channels[0] * width),
-            round(3 * depth),
-            False,
-            depthwise=depthwise,
-            act=act,
-        )
-
-        # bottom-up conv
-        self.bu_conv2 = Conv(int(in_channels[0] * width),
-                             int(in_channels[0] * width),
-                             3,
-                             2,
-                             act=act)
-        self.C3_n3 = CSPLayer(
-            int(2 * in_channels[0] * width),
-            int(in_channels[1] * width),
-            round(3 * depth),
-            False,
-            depthwise=depthwise,
-            act=act,
-        )
-
-        # bottom-up conv
-        self.bu_conv1 = Conv(int(in_channels[1] * width),
-                             int(in_channels[1] * width),
-                             3,
-                             2,
-                             act=act)
-        self.C3_n4 = CSPLayer(
-            int(2 * in_channels[1] * width),
-            int(in_channels[2] * width),
-            round(3 * depth),
-            False,
-            depthwise=depthwise,
-            act=act,
-        )
-
-    def forward(self, input):
-        """
-        Args:
-            inputs: input images.
-
-        Returns:
-            Tuple[Tensor]: FPN feature.
-        """
-
-        #  backbone
-        out_features = self.backbone(input)
-        features = [out_features[f] for f in self.in_features]
-        [x2, x1, x0] = features
-
-        fpn_out0 = self.lateral_conv0(x0)  # 1024->512/32
-        f_out0 = self.upsample(fpn_out0)  # 512/16
-        f_out0 = torch.cat([f_out0, x1], 1)  # 512->1024/16
-        f_out0 = self.C3_p4(f_out0)  # 1024->512/16
-
-        fpn_out1 = self.reduce_conv1(f_out0)  # 512->256/16
-        f_out1 = self.upsample(fpn_out1)  # 256/8
-        f_out1 = torch.cat([f_out1, x2], 1)  # 256->512/8
-        pan_out2 = self.C3_p3(f_out1)  # 512->256/8
-
-        p_out1 = self.bu_conv2(pan_out2)  # 256->256/16
-        p_out1 = torch.cat([p_out1, fpn_out1], 1)  # 256->512/16
-        pan_out1 = self.C3_n3(p_out1)  # 512->512/16
-
-        p_out0 = self.bu_conv1(pan_out1)  # 512->512/32
-        p_out0 = torch.cat([p_out0, fpn_out0], 1)  # 512->1024/32
-        pan_out0 = self.C3_n4(p_out0)  # 1024->1024/32
-
-        outputs = (pan_out2, pan_out1, pan_out0)
-        return outputs
-
-
 class YOLOX(nn.Module):
     """
     YOLOX model module. The module list is defined by create_yolov3_modules function.
@@ -1361,7 +1364,8 @@ class YOLOX(nn.Module):
     def forward(self, x, targets=None):
         # fpn output content features of [dark3, dark4, dark5]
         fpn_outs = self.backbone(x)
-
+        for fo in fpn_outs:
+            print('fpn_outs:{}', fo.detach().numpy().shape)
         if self.training:
             assert targets is not None
             loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.head(
@@ -1380,68 +1384,81 @@ class YOLOX(nn.Module):
         return outputs
 
 
+from dataset.mscoco import COCODataset
+from dataset.mscoco import COCOEvaluator
+from dataset.data_augment import TrainTransform
+from dataset.data_augment import ValTransform
+from dataset.datasets_wrapper import YoloBatchSampler
+from dataset.datasets_wrapper import DataLoader
+from dataset.samplers import InfiniteSampler
+from dataset.mosaic_detection import MosaicDetection
+from learning_config.lr_scheduler import LRScheduler
+
+
 class Exp:
 
     def __init__(self) -> None:
-        seed = None
-        output_dir = "./YOLOX_outputs"
-        print_interval = 100
-        eval_interval = 10
+        self.seed = None
+        self.output_dir = "./YOLOX_outputs"
+        self.print_interval = 100
+        self.eval_interval = 10
 
         # ---------------- model config ---------------- #
-        num_classes = 80
-        depth = 1.00
-        width = 1.00
-        act = 'silu'
+        self.num_classes = 80
+        self.depth = 1.00
+        self.width = 1.00
+        self.act = 'silu'
 
         # ---------------- dataloader config ---------------- #
         # set worker to 4 for shorter dataloader init time
-        data_num_workers = 4
-        input_size = (640, 640)  # (height, width)
+        self.data_num_workers = 1
+        self.input_size = (640, 640)  # (height, width)
         # Actual multiscale ranges: [640-5*32, 640+5*32].
         # To disable multiscale training, set the
         # self.multiscale_range to 0.
-        multiscale_range = 5
+        self.multiscale_range = 5
         # You can uncomment this line to specify a multiscale range
         # self.random_size = (14, 26)
-        data_dir = None
-        train_ann = "instances_train2017.json"
-        val_ann = "instances_val2017.json"
+        self.data_dir = "/Users/jielyu/Database/Dataset"
+        self.train_ann = "instances_train2017.json"
+        self.val_ann = "instances_val2017.json"
 
         # --------------- transform config ----------------- #
-        mosaic_prob = 1.0
-        mixup_prob = 1.0
-        hsv_prob = 1.0
-        flip_prob = 0.5
-        degrees = 10.0
-        translate = 0.1
-        mosaic_scale = (0.1, 2)
-        mixup_scale = (0.5, 1.5)
-        shear = 2.0
-        enable_mixup = True
+        self.mosaic_prob = 1.0
+        self.mixup_prob = 1.0
+        self.hsv_prob = 1.0
+        self.flip_prob = 0.5
+        self.degrees = 10.0
+        self.translate = 0.1
+        self.mosaic_scale = (0.1, 2)
+        self.mixup_scale = (0.5, 1.5)
+        self.shear = 2.0
+        self.enable_mixup = True
 
         # --------------  training config --------------------- #
-        warmup_epochs = 5
-        max_epoch = 300
-        warmup_lr = 0
-        basic_lr_per_img = 0.01 / 64.0
-        scheduler = "yoloxwarmcos"
-        no_aug_epochs = 15
-        min_lr_ratio = 0.05
-        ema = True
+        self.warmup_epochs = 5
+        self.max_epoch = 300
+        self.warmup_lr = 0
+        self.basic_lr_per_img = 0.01 / 64.0
+        self.scheduler = "yoloxwarmcos"
+        self.no_aug_epochs = 15
+        self.min_lr_ratio = 0.05
+        self.ema = True
 
-        weight_decay = 5e-4
-        momentum = 0.9
-        print_interval = 10
-        eval_interval = 10
-        exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
+        self.weight_decay = 5e-4
+        self.momentum = 0.9
+        self.print_interval = 10
+        self.eval_interval = 10
+        self.exp_name = os.path.split(
+            os.path.realpath(__file__))[1].split(".")[0]
 
         # -----------------  testing config ------------------ #
-        test_size = (640, 640)
-        test_conf = 0.01
-        nmsthre = 0.65
+        self.test_size = (640, 640)
+        self.test_conf = 0.01
+        self.nmsthre = 0.65
 
     def get_model(self):
+        """创建网络结构模型对象"""
 
         def init_yolo(M):
             for m in M.modules():
@@ -1465,9 +1482,208 @@ class Exp:
         self.model.head.initialize_biases(1e-2)
         return self.model
 
+    def get_data_loader(self, batch_size, no_aug=True, cache_img=False):
+        """用于包装训练数据集"""
+        # 创建MSCOCO数据集封装
+        dataset = COCODataset(
+            data_dir=self.data_dir,
+            json_file=self.train_ann,
+            img_size=self.input_size,
+            preproc=TrainTransform(max_labels=50,
+                                   flip_prob=self.flip_prob,
+                                   hsv_prob=self.hsv_prob),
+            cache=cache_img,
+        )
+        # 添加样本增强
+        dataset = MosaicDetection(
+            dataset,
+            mosaic=not no_aug,
+            img_size=self.input_size,
+            preproc=TrainTransform(max_labels=120,
+                                   flip_prob=self.flip_prob,
+                                   hsv_prob=self.hsv_prob),
+            degrees=self.degrees,
+            translate=self.translate,
+            mosaic_scale=self.mosaic_scale,
+            mixup_scale=self.mixup_scale,
+            shear=self.shear,
+            enable_mixup=self.enable_mixup,
+            mosaic_prob=self.mosaic_prob,
+            mixup_prob=self.mixup_prob,
+        )
+        self.dataset = dataset
+        # 创建采样器
+        sampler = InfiniteSampler(len(self.dataset),
+                                  seed=self.seed if self.seed else 0)
+        batch_sampler = YoloBatchSampler(
+            sampler=sampler,
+            batch_size=batch_size,
+            drop_last=False,
+            mosaic=not no_aug,
+        )
+        # 创建DataLoader
+        dataloader_kwargs = {
+            "num_workers": self.data_num_workers,
+            "pin_memory": True,
+            "batch_sampler": batch_sampler
+        }
+        train_loader = DataLoader(self.dataset, **dataloader_kwargs)
+
+        return train_loader
+
+    def random_resize(self, data_loader, epoch, rank):
+        tensor = torch.LongTensor(2).cuda()
+
+        if rank == 0:
+            size_factor = self.input_size[1] * 1.0 / self.input_size[0]
+            if not hasattr(self, 'random_size'):
+                min_size = int(self.input_size[0] / 32) - self.multiscale_range
+                max_size = int(self.input_size[0] / 32) + self.multiscale_range
+                self.random_size = (min_size, max_size)
+            size = random.randint(*self.random_size)
+            size = (int(32 * size), 32 * int(size * size_factor))
+            tensor[0] = size[0]
+            tensor[1] = size[1]
+
+        input_size = (tensor[0].item(), tensor[1].item())
+        return input_size
+
+    def preprocess(self, inputs, targets, tsize):
+        scale_y = tsize[0] / self.input_size[0]
+        scale_x = tsize[1] / self.input_size[1]
+        if scale_x != 1 or scale_y != 1:
+            inputs = nn.functional.interpolate(inputs,
+                                               size=tsize,
+                                               mode="bilinear",
+                                               align_corners=False)
+            targets[..., 1::2] = targets[..., 1::2] * scale_x
+            targets[..., 2::2] = targets[..., 2::2] * scale_y
+        return inputs, targets
+
+    def get_optimizer(self, batch_size):
+        """创建优化器对象"""
+        if "optimizer" not in self.__dict__:
+            if self.warmup_epochs > 0:
+                lr = self.warmup_lr
+            else:
+                lr = self.basic_lr_per_img * batch_size
+
+            pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
+
+            for k, v in self.model.named_modules():
+                if hasattr(v, "bias") and isinstance(v.bias, nn.Parameter):
+                    pg2.append(v.bias)  # biases
+                if isinstance(v, nn.BatchNorm2d) or "bn" in k:
+                    pg0.append(v.weight)  # no decay
+                elif hasattr(v, "weight") and isinstance(
+                        v.weight, nn.Parameter):
+                    pg1.append(v.weight)  # apply decay
+
+            optimizer = torch.optim.SGD(pg0,
+                                        lr=lr,
+                                        momentum=self.momentum,
+                                        nesterov=True)
+            optimizer.add_param_group({
+                "params": pg1,
+                "weight_decay": self.weight_decay
+            })  # add pg1 with weight_decay
+            optimizer.add_param_group({"params": pg2})
+            self.optimizer = optimizer
+
+        return self.optimizer
+
+    def get_lr_scheduler(self, lr, iters_per_epoch):
+
+        scheduler = LRScheduler(
+            self.scheduler,
+            lr,
+            iters_per_epoch,
+            self.max_epoch,
+            warmup_epochs=self.warmup_epochs,
+            warmup_lr_start=self.warmup_lr,
+            no_aug_epochs=self.no_aug_epochs,
+            min_lr_ratio=self.min_lr_ratio,
+        )
+        return scheduler
+
+    def get_eval_loader(self, batch_size, testdev=False, legacy=False):
+
+        valdataset = COCODataset(
+            data_dir=self.data_dir,
+            json_file=self.val_ann
+            if not testdev else "image_info_test-dev2017.json",
+            name="val2017" if not testdev else "test2017",
+            img_size=self.test_size,
+            preproc=ValTransform(legacy=legacy),
+        )
+
+        sampler = torch.utils.data.SequentialSampler(valdataset)
+        dataloader_kwargs = {
+            "num_workers": self.data_num_workers,
+            "pin_memory": True,
+            "sampler": sampler,
+            "batch_size": batch_size
+        }
+        val_loader = torch.utils.data.DataLoader(valdataset,
+                                                 **dataloader_kwargs)
+
+        return val_loader
+
+    def get_evaluator(self, batch_size, testdev=False, legacy=False):
+
+        val_loader = self.get_eval_loader(batch_size, testdev, legacy)
+        evaluator = COCOEvaluator(
+            dataloader=val_loader,
+            img_size=self.test_size,
+            confthre=self.test_conf,
+            nmsthre=self.nmsthre,
+            num_classes=self.num_classes,
+            testdev=testdev,
+        )
+        return evaluator
+
+    def eval(self, model, evaluator, is_distributed, half=False):
+        return evaluator.evaluate(model, is_distributed, half)
+
+
+import matplotlib.pyplot as plt
+
 
 def main():
-    pass
+    bs = 2
+    exp = Exp()
+    model = exp.get_model()
+    model.train()
+    train_loader = exp.get_data_loader(bs)
+    eval_loader = exp.get_eval_loader(bs)
+    print('train_num_batch:{}, eval_num_batch:{}'.format(
+        len(train_loader), len(eval_loader)))
+    # 学习率规划对象
+    lr_scheduler = exp.get_lr_scheduler(exp.basic_lr_per_img * bs, 50000)
+    # 创建优化器
+    optimizer = exp.get_optimizer(bs)
+    scaler = torch.cuda.amp.GradScaler(enabled=False)
+
+    for idx, batch in enumerate(train_loader):
+        # 检查数据格式
+        print(batch[1].numpy().shape)
+        print(batch[0].numpy().shape)
+        # 前向推理
+        outputs = model(batch[0], batch[1])
+        print(outputs)
+        # 误差反传
+        loss = outputs["total_loss"]
+        optimizer.zero_grad()  # 缓存梯度清零
+        scaler.scale(loss).backward()  # 误差反传
+        scaler.step(optimizer)  # 计算增量
+        scaler.update()  # 迭代更新
+        # 更新学习率
+        lr = lr_scheduler.update_lr(idx + 1)
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = lr
+        print('[{}/{}] train succ'.format(idx, len(train_loader)))
+        if (idx > 10):
+            break
 
 
 if __name__ == '__main__':
