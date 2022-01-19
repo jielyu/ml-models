@@ -1798,7 +1798,7 @@ def main():
     args = parse_args()
     # 设置参数
     if args.colab is True:
-        args.data_dir = '/content/drive/Shareddrives/jielyu-5T/Dataset'
+        args.data_dir = './dataset'
         args.output_dir = '/content/drive/Shareddrives/jielyu-5T/output/yolox_exp'
     # 创建实验对象
     exp = Exp(data_dir=args.data_dir,
