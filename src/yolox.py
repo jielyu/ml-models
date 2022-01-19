@@ -1748,7 +1748,7 @@ class Exp:
                                             idx_epoch * num_train_iters + 1)
                 for param_group in optimizer.param_groups:
                     param_group["lr"] = lr
-                loss_value = loss.detach().numpy()
+                loss_value = loss.cpu().detach().numpy()
                 # 打印日志
                 if idx_iter % 100 == 0:
                     logger.info(
