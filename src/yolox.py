@@ -1394,7 +1394,7 @@ from dataset.samplers import InfiniteSampler
 from dataset.mosaic_detection import MosaicDetection
 from learning_config.lr_scheduler import LRScheduler
 
-
+import time
 class Exp:
 
     def __init__(self,
@@ -1709,7 +1709,7 @@ class Exp:
         torch.save(ckpt_state, filename)
         return filename
 
-    def train(self, is_gpu=False):
+    def train(self, is_gpu=False, no_aug=False):
         """用于训练模型"""
         logger.info('starting train model in {} mode ...'.format('CUDA' if is_gpu else 'CPU'))
         # 创建模型
@@ -1718,7 +1718,7 @@ class Exp:
         # 创建优化器
         optimizer = self.get_optimizer(self.batch_size)
         # 创建数据载入器
-        train_loader = self.get_data_loader(self.batch_size)
+        train_loader = self.get_data_loader(self.batch_size, no_aug)
         eval_loader = self.get_eval_loader(self.batch_size)
         num_train_iters = len(train_loader)
         num_eval_iters = len(eval_loader)
@@ -1738,11 +1738,16 @@ class Exp:
                     images = images.cuda()
                     labels = labels.cuda()
                 # 前向推理
+                forward_start = time.time()
                 outputs = model(images, labels)
+                forword_cost = time.time() - forward_start
                 loss = outputs["total_loss"]
+                # 反向传播
+                backward_start = time.time()
                 optimizer.zero_grad()  # 缓存梯度清零
                 loss.backward()  # 误差反传
                 optimizer.step()  # 更新权重
+                backward_cost = time.time() - backward_start
                 # 更新学习率
                 lr = lr_scheduler.update_lr(idx_iter +
                                             idx_epoch * num_train_iters + 1)
@@ -1752,9 +1757,9 @@ class Exp:
                 # 打印日志
                 if idx_iter % 100 == 0:
                     logger.info(
-                        '[{}/{}][{}/{}] train phase. loss={:.4f}'.format(
+                        '[{}/{}][{}/{}] train phase. loss={:.4f}, timecost=[f:{:.4f}, b:{:.4f}]'.format(
                             idx_epoch, self.max_epoch, idx_iter,
-                            num_train_iters, loss_value))
+                            num_train_iters, loss_value, forword_cost, backward_cost))
             # 保存模型
             model_path = self.save_model(self.output_dir, model, optimizer,
                                          idx_epoch, loss_value)
@@ -1784,6 +1789,7 @@ def parse_args():
     args.add_argument('--output_dir', type=str, default='./YOLOX_outputs')
     args.add_argument('--batch_size', type=int, default=4)
     args.add_argument('--num_data_worker', type=int, default=4)
+    args.add_argument('--no_aug', type=str2bool, default=False)
     return args.parse_args()
 
 
@@ -1800,7 +1806,7 @@ def main():
               batch_size=args.batch_size,
               num_data_worker=args.num_data_worker)
     # 执行训练流程
-    exp.train(args.gpu)
+    exp.train(args.gpu, args.no_aug)
 
 
 if __name__ == '__main__':
