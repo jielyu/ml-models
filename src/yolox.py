@@ -1732,6 +1732,7 @@ class Exp:
         # 训练迭代
         for idx_epoch in range(start_epoch, self.max_epoch):
             for idx_iter, batch in enumerate(train_loader):
+                idx_iter = idx_iter % num_train_iters
                 # 数据转换
                 images, labels = batch[0], batch[1]
                 if is_gpu is True:
@@ -1760,6 +1761,8 @@ class Exp:
                         '[{}/{}][{}/{}] train phase. loss={:.4f}, timecost=[f:{:.4f}, b:{:.4f}]'.format(
                             idx_epoch, self.max_epoch, idx_iter,
                             num_train_iters, loss_value, forword_cost, backward_cost))
+                if (idx_iter + 1 == num_train_iters):
+                    break
             # 保存模型
             model_path = self.save_model(self.output_dir, model, optimizer,
                                          idx_epoch, loss_value)
