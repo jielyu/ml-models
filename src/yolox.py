@@ -901,8 +901,8 @@ class YOLOXHead(nn.Module):
                      cls_output.sigmoid()], 1)
 
             outputs.append(output)
-        for o in outputs:
-            print('output:{}', o.detach().numpy().shape)
+        # for o in outputs:
+        #     print('output:{}', o.detach().numpy().shape)
         if self.training:
             return self.get_losses(
                 imgs,
@@ -1364,8 +1364,8 @@ class YOLOX(nn.Module):
     def forward(self, x, targets=None):
         # fpn output content features of [dark3, dark4, dark5]
         fpn_outs = self.backbone(x)
-        for fo in fpn_outs:
-            print('fpn_outs:{}', fo.detach().numpy().shape)
+        # for fo in fpn_outs:
+        #     print('fpn_outs:{}', fo.detach().numpy().shape)
         if self.training:
             assert targets is not None
             loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.head(
@@ -1397,11 +1397,13 @@ from learning_config.lr_scheduler import LRScheduler
 
 class Exp:
 
-    def __init__(self) -> None:
+    def __init__(self,
+                 data_dir='/Users/jielyu/Database/Dataset',
+                 output_dir='./YOLOX_outputs',
+                 batch_size=4,
+                 num_data_worker=4) -> None:
         self.seed = None
-        self.output_dir = "./YOLOX_outputs"
-        self.print_interval = 100
-        self.eval_interval = 10
+        self.output_dir = output_dir
 
         # ---------------- model config ---------------- #
         self.num_classes = 80
@@ -1411,7 +1413,8 @@ class Exp:
 
         # ---------------- dataloader config ---------------- #
         # set worker to 4 for shorter dataloader init time
-        self.data_num_workers = 1
+        self.data_num_workers = num_data_worker
+        self.batch_size = batch_size
         self.input_size = (640, 640)  # (height, width)
         # Actual multiscale ranges: [640-5*32, 640+5*32].
         # To disable multiscale training, set the
@@ -1419,7 +1422,7 @@ class Exp:
         self.multiscale_range = 5
         # You can uncomment this line to specify a multiscale range
         # self.random_size = (14, 26)
-        self.data_dir = "/Users/jielyu/Database/Dataset"
+        self.data_dir = data_dir
         self.train_ann = "instances_train2017.json"
         self.val_ann = "instances_val2017.json"
 
@@ -1482,7 +1485,7 @@ class Exp:
         self.model.head.initialize_biases(1e-2)
         return self.model
 
-    def get_data_loader(self, batch_size, no_aug=True, cache_img=False):
+    def get_data_loader(self, batch_size, no_aug=False, cache_img=False):
         """用于包装训练数据集"""
         # 创建MSCOCO数据集封装
         dataset = COCODataset(
@@ -1645,45 +1648,159 @@ class Exp:
     def eval(self, model, evaluator, is_distributed, half=False):
         return evaluator.evaluate(model, is_distributed, half)
 
+    @staticmethod
+    def get_latest_file(file_dir, cont='yolox'):
+        """用于获取指定目录下的最新文件
+        
+        Args:
+            file_dir: 指定目录
+            cont: 文件名包含的内容
 
-import matplotlib.pyplot as plt
+        Returns:
+            file_path: 最新文件的路径
+
+        """
+        if not os.path.isdir(file_dir):
+            return None
+        file_list = os.listdir(file_dir)
+        file_list.sort(
+            key=lambda fn: os.path.getmtime(os.path.join(file_dir, fn))
+            if not os.path.isdir(os.path.join(file_dir, fn)) else 0)
+        file_path = None
+        for filename in file_list:
+            if cont in filename:
+                file_path = os.path.join(file_dir, filename)
+        return file_path
+
+    @classmethod
+    def resume_model(cls, load_dir, model, optimizer):
+        """恢复训练状态"""
+        # 查找最新模型文件
+        start_epoch = -1
+        lastest_model_path = cls.get_latest_file(load_dir, 'yolox')
+        if lastest_model_path is not None and os.path.isfile(
+                lastest_model_path):
+            # 载入模型文件
+            ckpt = torch.load(lastest_model_path, map_location='cpu')
+            if 'model' in ckpt and 'optimizer' in ckpt and 'start_epoch' in ckpt:
+                # 恢复状态
+                model.load_state_dict(ckpt['model'])
+                optimizer.load_state_dict(ckpt['optimizer'])
+                start_epoch = ckpt['start_epoch']
+                logger.info('resume model at epoch {} from {} succ'.format(
+                    start_epoch, lastest_model_path))
+        return start_epoch
+
+    @staticmethod
+    def save_model(save_dir, model, optimizer, epoch, loss):
+        """保存模型训练状态到文件"""
+        # 构造需要存储的模型对象
+        ckpt_state = {
+            "start_epoch": epoch,
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict()
+        }
+        # 检查并生成目录
+        if not os.path.isdir(save_dir):
+            os.makedirs(save_dir)
+        # 保存到文件
+        filename = os.path.join(save_dir,
+                                'yolox_epoch_{}_ckpt.pth'.format(epoch))
+        torch.save(ckpt_state, filename)
+        return filename
+
+    def train(self, is_gpu=False):
+        """用于训练模型"""
+        logger.info('starting train model in {} mode ...'.format('CUDA' if is_gpu else 'CPU'))
+        # 创建模型
+        model = self.get_model()
+        model.train()
+        # 创建优化器
+        optimizer = self.get_optimizer(self.batch_size)
+        # 创建数据载入器
+        train_loader = self.get_data_loader(self.batch_size)
+        eval_loader = self.get_eval_loader(self.batch_size)
+        num_train_iters = len(train_loader)
+        num_eval_iters = len(eval_loader)
+        # 创建学习率规划对象
+        lr_scheduler = self.get_lr_scheduler(
+            self.basic_lr_per_img * self.batch_size, num_train_iters)
+        # 断点接续训练
+        start_epoch = 1 + self.resume_model(self.output_dir, model, optimizer)
+        if is_gpu is True:
+            model = model.cuda()
+        # 训练迭代
+        for idx_epoch in range(start_epoch, self.max_epoch):
+            for idx_iter, batch in enumerate(train_loader):
+                # 数据转换
+                images, labels = batch[0], batch[1]
+                if is_gpu is True:
+                    images = images.cuda()
+                    labels = labels.cuda()
+                # 前向推理
+                outputs = model(images, labels)
+                loss = outputs["total_loss"]
+                optimizer.zero_grad()  # 缓存梯度清零
+                loss.backward()  # 误差反传
+                optimizer.step()  # 更新权重
+                # 更新学习率
+                lr = lr_scheduler.update_lr(idx_iter +
+                                            idx_epoch * num_train_iters + 1)
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] = lr
+                loss_value = loss.detach().numpy()
+                # 打印日志
+                if idx_iter % 100 == 0:
+                    logger.info(
+                        '[{}/{}][{}/{}] train phase. loss={:.4f}'.format(
+                            idx_epoch, self.max_epoch, idx_iter,
+                            num_train_iters, loss_value))
+            # 保存模型
+            model_path = self.save_model(self.output_dir, model, optimizer,
+                                         idx_epoch, loss_value)
+            logger.info('save {}-epoch model to {}'.format(
+                idx_epoch, model_path))
+
+
+def str2bool(v):
+    """用于命令行解析bool类型的参数"""
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
+# import matplotlib.pyplot as plt
+import argparse
+def parse_args():
+    args = argparse.ArgumentParser(description='yolox')
+    args.add_argument('--gpu', type=str2bool, default=False)
+    args.add_argument('--colab', type=str2bool, default=False)
+    args.add_argument('--data_dir',
+                      type=str,
+                      default='/Users/jielyu/Database/Dataset')
+    args.add_argument('--output_dir', type=str, default='./YOLOX_outputs')
+    args.add_argument('--batch_size', type=int, default=4)
+    args.add_argument('--num_data_worker', type=int, default=4)
+    return args.parse_args()
 
 
 def main():
-    bs = 2
-    exp = Exp()
-    model = exp.get_model()
-    model.train()
-    train_loader = exp.get_data_loader(bs)
-    eval_loader = exp.get_eval_loader(bs)
-    print('train_num_batch:{}, eval_num_batch:{}'.format(
-        len(train_loader), len(eval_loader)))
-    # 学习率规划对象
-    lr_scheduler = exp.get_lr_scheduler(exp.basic_lr_per_img * bs, 50000)
-    # 创建优化器
-    optimizer = exp.get_optimizer(bs)
-    scaler = torch.cuda.amp.GradScaler(enabled=False)
-
-    for idx, batch in enumerate(train_loader):
-        # 检查数据格式
-        print(batch[1].numpy().shape)
-        print(batch[0].numpy().shape)
-        # 前向推理
-        outputs = model(batch[0], batch[1])
-        print(outputs)
-        # 误差反传
-        loss = outputs["total_loss"]
-        optimizer.zero_grad()  # 缓存梯度清零
-        scaler.scale(loss).backward()  # 误差反传
-        scaler.step(optimizer)  # 计算增量
-        scaler.update()  # 迭代更新
-        # 更新学习率
-        lr = lr_scheduler.update_lr(idx + 1)
-        for param_group in optimizer.param_groups:
-            param_group["lr"] = lr
-        print('[{}/{}] train succ'.format(idx, len(train_loader)))
-        if (idx > 10):
-            break
+    # 解析命令行参数
+    args = parse_args()
+    # 设置参数
+    if args.colab is True:
+        args.data_dir = '/content/drive/Shareddrives/jielyu-5T/Dataset'
+        args.output_dir = '/content/drive/Shareddrives/jielyu-5T/output/yolox_exp'
+    # 创建实验对象
+    exp = Exp(data_dir=args.data_dir,
+              output_dir=args.output_dir,
+              batch_size=args.batch_size,
+              num_data_worker=args.num_data_worker)
+    # 执行训练流程
+    exp.train(args.gpu)
 
 
 if __name__ == '__main__':
