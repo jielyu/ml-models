@@ -1681,7 +1681,7 @@ class Exp:
         if lastest_model_path is not None and os.path.isfile(
                 lastest_model_path):
             # 载入模型文件
-            ckpt = torch.load(lastest_model_path, map_location=device)
+            ckpt = torch.load(lastest_model_path, map_location=torch.device(device))
             if 'model' in ckpt and 'optimizer' in ckpt and 'start_epoch' in ckpt:
                 # 恢复状态
                 model.load_state_dict(ckpt['model'])
@@ -1715,6 +1715,9 @@ class Exp:
         # 创建模型
         model = self.get_model()
         model.train()
+        if is_gpu is True:
+            # 该语句必须在创建optimizer之前
+            model = model.cuda()
         # 创建优化器
         optimizer = self.get_optimizer(self.batch_size)
         # 创建数据载入器
@@ -1728,8 +1731,7 @@ class Exp:
         # 断点接续训练
         device = 'cuda' if is_gpu is True else 'cpu'
         start_epoch = 1 + self.resume_model(self.output_dir, model, optimizer, device)
-        if is_gpu is True:
-            model = model.cuda()
+        
         # 训练迭代
         for idx_epoch in range(start_epoch, self.max_epoch):
             for idx_iter, batch in enumerate(train_loader):
