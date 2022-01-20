@@ -1673,7 +1673,7 @@ class Exp:
         return file_path
 
     @classmethod
-    def resume_model(cls, load_dir, model, optimizer):
+    def resume_model(cls, load_dir, model, optimizer, device='cuda'):
         """恢复训练状态"""
         # 查找最新模型文件
         start_epoch = -1
@@ -1681,7 +1681,7 @@ class Exp:
         if lastest_model_path is not None and os.path.isfile(
                 lastest_model_path):
             # 载入模型文件
-            ckpt = torch.load(lastest_model_path, map_location='cpu')
+            ckpt = torch.load(lastest_model_path, map_location=device)
             if 'model' in ckpt and 'optimizer' in ckpt and 'start_epoch' in ckpt:
                 # 恢复状态
                 model.load_state_dict(ckpt['model'])
@@ -1726,7 +1726,8 @@ class Exp:
         lr_scheduler = self.get_lr_scheduler(
             self.basic_lr_per_img * self.batch_size, num_train_iters)
         # 断点接续训练
-        start_epoch = 1 + self.resume_model(self.output_dir, model, optimizer)
+        device = 'cuda' if is_gpu is True else 'cpu'
+        start_epoch = 1 + self.resume_model(self.output_dir, model, optimizer, device)
         if is_gpu is True:
             model = model.cuda()
         # 训练迭代
