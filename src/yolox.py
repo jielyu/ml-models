@@ -5,10 +5,13 @@
 **说明:** 本实现参考或复用项目见github: https://github.com/Megvii-BaseDetection/YOLOX
 """
 from __future__ import absolute_import
+import enum
 
 import os
 import math
 import random
+import matplotlib.pyplot as plt
+from matplotlib.pyplot import grid
 import torch
 import torchvision
 import torch.nn as nn
@@ -695,50 +698,6 @@ class YOLOPAFPN(nn.Module):
         return outputs
 
 
-class IOUloss(nn.Module):
-
-    def __init__(self, reduction="none", loss_type="iou"):
-        super(IOUloss, self).__init__()
-        self.reduction = reduction
-        self.loss_type = loss_type
-
-    def forward(self, pred, target):
-        assert pred.shape[0] == target.shape[0]
-
-        pred = pred.view(-1, 4)
-        target = target.view(-1, 4)
-        tl = torch.max((pred[:, :2] - pred[:, 2:] / 2),
-                       (target[:, :2] - target[:, 2:] / 2))
-        br = torch.min((pred[:, :2] + pred[:, 2:] / 2),
-                       (target[:, :2] + target[:, 2:] / 2))
-
-        area_p = torch.prod(pred[:, 2:], 1)
-        area_g = torch.prod(target[:, 2:], 1)
-
-        en = (tl < br).type(tl.type()).prod(dim=1)
-        area_i = torch.prod(br - tl, 1) * en
-        area_u = area_p + area_g - area_i
-        iou = (area_i) / (area_u + 1e-16)
-
-        if self.loss_type == "iou":
-            loss = 1 - iou**2
-        elif self.loss_type == "giou":
-            c_tl = torch.min((pred[:, :2] - pred[:, 2:] / 2),
-                             (target[:, :2] - target[:, 2:] / 2))
-            c_br = torch.max((pred[:, :2] + pred[:, 2:] / 2),
-                             (target[:, :2] + target[:, 2:] / 2))
-            area_c = torch.prod(c_br - c_tl, 1)
-            giou = iou - (area_c - area_u) / area_c.clamp(1e-16)
-            loss = 1 - giou.clamp(min=-1.0, max=1.0)
-
-        if self.reduction == "mean":
-            loss = loss.mean()
-        elif self.reduction == "sum":
-            loss = loss.sum()
-
-        return loss
-
-
 class YOLOXHead(nn.Module):
 
     def __init__(
@@ -749,6 +708,7 @@ class YOLOXHead(nn.Module):
         in_channels=[256, 512, 1024],
         act="silu",
         depthwise=False,
+        img_size=[640, 640],
     ):
         """
         Args:
@@ -837,12 +797,21 @@ class YOLOXHead(nn.Module):
                     padding=0,
                 ))
 
-        self.use_l1 = False
-        self.l1_loss = nn.L1Loss(reduction="none")
-        self.bcewithlog_loss = nn.BCEWithLogitsLoss(reduction="none")
-        self.iou_loss = IOUloss(reduction="none")
         self.strides = strides
-        self.grids = [torch.zeros(1)] * len(in_channels)
+        self.img_size = img_size
+        # 生成嵌入网格
+        self.grids = []
+        self.feat_sizes = []
+        for _, stride in enumerate(self.strides):
+            feat_h, feat_w = int(self.img_size[0] / stride), int(
+                self.img_size[1] / stride)
+            self.feat_sizes.append([feat_h, feat_w])
+            yv, xv = torch.meshgrid(
+                [torch.arange(feat_h),
+                 torch.arange(feat_w)])
+            grid = torch.stack((xv, yv), 2).view(1, 1, feat_h, feat_w,
+                                                 2).type(torch.float32)
+            self.grids.append(grid)
 
     def initialize_biases(self, prior_prob):
         for conv in self.cls_preds:
@@ -855,159 +824,156 @@ class YOLOXHead(nn.Module):
             b.data.fill_(-math.log((1 - prior_prob) / prior_prob))
             conv.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
 
-    def forward(self, xin, labels=None, imgs=None):
+    def forward(self, xin):
         outputs = []
-        origin_preds = []
-        x_shifts = []
-        y_shifts = []
+        origin_reg = []
+        origin_obj = []
+        origin_cls = []
+        origin_grid = []
         expanded_strides = []
 
-        for k, (cls_conv, reg_conv, stride_this_level, x) in enumerate(
-                zip(self.cls_convs, self.reg_convs, self.strides, xin)):
+        for k, x in enumerate(xin):
             print("iter={}, x.shape={}".format(k, x.shape))
+            stride_this_level = self.strides[k]
+            # 分离不同任务的分支结构
             x = self.stems[k](x)
-            cls_x = x
-            reg_x = x
-
-            cls_feat = cls_conv(cls_x)
+            cls_feat = self.cls_convs[k](x)
             cls_output = self.cls_preds[k](cls_feat)
-
-            reg_feat = reg_conv(reg_x)
+            reg_feat = self.reg_convs[k](x)
             reg_output = self.reg_preds[k](reg_feat)
             obj_output = self.obj_preds[k](reg_feat)
             print("iter={}, cls_output.shape={}".format(k, cls_output.shape))
             print("iter={}, reg_output.shape={}".format(k, reg_output.shape))
             print("iter={}, obj_output.shape={}".format(k, obj_output.shape))
 
-            if self.training:
-                output = torch.cat([reg_output, obj_output, cls_output], 1)
-                output, grid = self.get_output_and_grid(
-                    output, k, stride_this_level, xin[0].type())
-                x_shifts.append(grid[:, :, 0])  # [N, n_preds]
-                y_shifts.append(grid[:, :, 1])  # [N, n_preds]
+            # 进行网格嵌入的解码
+            batch_size = x.shape[0]
+            n_ch = 5 + self.num_classes
+            output = torch.cat([
+                reg_output,
+                torch.sigmoid(obj_output),
+                torch.sigmoid(cls_output)
+            ], 1)
+            hsize, wsize = output.shape[-2:]
+            output = output.view(batch_size, self.n_anchors, n_ch, hsize,
+                                 wsize)
+            output = output.permute(0, 1, 3, 4, 2)
+            output = output.reshape(batch_size, self.n_anchors * hsize * wsize,
+                                    -1)
+            grid = self.grids[k].view(1, -1, 2)
+            output[..., :2] = (output[..., :2] + grid) * stride_this_level
+            output[..., 2:4] = torch.exp(output[..., 2:4]) * stride_this_level
+            outputs.append(output)
+
+            # 保留原始输出bbox，便于损失函数的构建
+            if self.training is True:
+                batch_size = reg_output.shape[0]
+                hsize, wsize = reg_output.shape[-2:]
+                # bbox回归
+                reg_output = reg_output.view(batch_size, self.n_anchors, 4,
+                                             hsize, wsize)
+                reg_output = reg_output.permute(0, 1, 3, 4,
+                                                2).reshape(batch_size, -1, 4)
+                origin_reg.append(reg_output.clone())
+                # 目标判断
+                obj_output = obj_output.permute(0, 2, 3, 1).reshape(
+                    batch_size, self.n_anchors * hsize * wsize, -1)
+                origin_obj.append(obj_output)
+                # 类别判定
+                cls_output = cls_output.permute(0, 2, 3, 1).reshape(
+                    batch_size, self.n_anchors * hsize * wsize, -1)
+                origin_cls.append(cls_output)
+                # 其他附带信息
+                origin_grid.append(grid)
                 expanded_strides.append(
                     torch.zeros(
-                        1, grid.shape[1]).fill_(stride_this_level).type_as(
-                            xin[0]))
-                if self.use_l1:
-                    batch_size = reg_output.shape[0]
-                    hsize, wsize = reg_output.shape[-2:]
-                    reg_output = reg_output.view(batch_size, self.n_anchors, 4,
-                                                 hsize, wsize)
-                    reg_output = reg_output.permute(0, 1, 3, 4, 2).reshape(
-                        batch_size, -1, 4)
-                    origin_preds.append(reg_output.clone())
+                        1, grid.shape[1]).fill_(stride_this_level).type_as(x))
+        pred_output = torch.cat(outputs, dim=1)
+        return pred_output, origin_reg, origin_obj, origin_cls, origin_grid, expanded_strides
 
-            else:
-                output = torch.cat(
-                    [reg_output,
-                     obj_output.sigmoid(),
-                     cls_output.sigmoid()], 1)
-            print("iter={}, output.shape={}".format(k, output.shape))
-            outputs.append(output)
-        # for o in outputs:
-        #     print('output:{}', o.detach().numpy().shape)
-        if self.training:
-            return self.get_losses(
-                imgs,
-                x_shifts,
-                y_shifts,
-                expanded_strides,
-                labels,
-                torch.cat(outputs, 1),
-                origin_preds,
-                dtype=xin[0].dtype,
-            )
-        else:
-            self.hw = [x.shape[-2:] for x in outputs]
-            # [batch, n_anchors_all, 85]
-            outputs = torch.cat([x.flatten(start_dim=2) for x in outputs],
-                                dim=2).permute(0, 2, 1)
-            if self.decode_in_inference:
-                return self.decode_outputs(outputs, dtype=xin[0].type())
-            else:
-                return outputs
 
-    def get_output_and_grid(self, output, k, stride, dtype):
-        grid = self.grids[k]
+class IOUloss(nn.Module):
 
-        batch_size = output.shape[0]
-        n_ch = 5 + self.num_classes
-        hsize, wsize = output.shape[-2:]
-        if grid.shape[2:4] != output.shape[2:4]:
-            yv, xv = torch.meshgrid([torch.arange(hsize), torch.arange(wsize)])
-            grid = torch.stack((xv, yv), 2).view(1, 1, hsize, wsize,
-                                                 2).type(dtype)
-            self.grids[k] = grid
+    def __init__(self, reduction="none", loss_type="iou"):
+        super(IOUloss, self).__init__()
+        self.reduction = reduction
+        self.loss_type = loss_type
 
-        output = output.view(batch_size, self.n_anchors, n_ch, hsize, wsize)
-        output = output.permute(0, 1, 3, 4,
-                                2).reshape(batch_size,
-                                           self.n_anchors * hsize * wsize, -1)
-        grid = grid.view(1, -1, 2)
-        output[..., :2] = (output[..., :2] + grid) * stride
-        output[..., 2:4] = torch.exp(output[..., 2:4]) * stride
-        return output, grid
+    def forward(self, pred, target):
+        assert pred.shape[0] == target.shape[0]
 
-    def decode_outputs(self, outputs, dtype):
-        grids = []
-        strides = []
-        for (hsize, wsize), stride in zip(self.hw, self.strides):
-            yv, xv = torch.meshgrid([torch.arange(hsize), torch.arange(wsize)])
-            grid = torch.stack((xv, yv), 2).view(1, -1, 2)
-            grids.append(grid)
-            shape = grid.shape[:2]
-            strides.append(torch.full((*shape, 1), stride))
+        pred = pred.view(-1, 4)
+        target = target.view(-1, 4)
+        tl = torch.max((pred[:, :2] - pred[:, 2:] / 2),
+                       (target[:, :2] - target[:, 2:] / 2))
+        br = torch.min((pred[:, :2] + pred[:, 2:] / 2),
+                       (target[:, :2] + target[:, 2:] / 2))
 
-        grids = torch.cat(grids, dim=1).type(dtype)
-        strides = torch.cat(strides, dim=1).type(dtype)
+        area_p = torch.prod(pred[:, 2:], 1)
+        area_g = torch.prod(target[:, 2:], 1)
 
-        outputs[..., :2] = (outputs[..., :2] + grids) * strides
-        outputs[..., 2:4] = torch.exp(outputs[..., 2:4]) * strides
-        return outputs
+        en = (tl < br).type(tl.type()).prod(dim=1)
+        area_i = torch.prod(br - tl, 1) * en
+        area_u = area_p + area_g - area_i
+        iou = (area_i) / (area_u + 1e-16)
 
-    def get_losses(
-        self,
-        imgs,
-        x_shifts,
-        y_shifts,
-        expanded_strides,
-        labels,
-        outputs,
-        origin_preds,
-        dtype,
-    ):
-        """计算mini-batch的损失
-           
-        Args:
-            imgs,
-            x_shifts,           list([batchsize, n_preds])
-            y_shifts,           list([batchsize, n_preds])
-            expanded_strides,   list([1, n_preds/scales])
-            labels,             [batchsize, objs, (cate, x, y, w, h)]
-            outputs,            [batchsize, n_preds, ch[5+cates]]
-            origin_preds,       [batchsize, n_preds, 4]
-            dtype,              
+        if self.loss_type == "iou":
+            loss = 1 - iou**2
+        elif self.loss_type == "giou":
+            c_tl = torch.min((pred[:, :2] - pred[:, 2:] / 2),
+                             (target[:, :2] - target[:, 2:] / 2))
+            c_br = torch.max((pred[:, :2] + pred[:, 2:] / 2),
+                             (target[:, :2] + target[:, 2:] / 2))
+            area_c = torch.prod(c_br - c_tl, 1)
+            giou = iou - (area_c - area_u) / area_c.clamp(1e-16)
+            loss = 1 - giou.clamp(min=-1.0, max=1.0)
 
-        Returns:
-            loss, 总的损失
+        if self.reduction == "mean":
+            loss = loss.mean()
+        elif self.reduction == "sum":
+            loss = loss.sum()
 
-        """
-        print("outputs.shape", outputs.shape)
-        bbox_preds = outputs[:, :, :4]  # [batchsize, n_preds, 4]
-        obj_preds = outputs[:, :, 4].unsqueeze(-1)  # [batchsize, n_preds, 1]
-        cls_preds = outputs[:, :, 5:]  # [batchsize, n_preds, n_cls]
+        return loss
 
-        # calculate targets
-        nlabel = (labels.sum(dim=2) > 0).sum(dim=1)  # number of objects
 
-        total_num_anchors = outputs.shape[1]
+class YoloxLoss(nn.Module):
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.use_l1 = False
+        self.l1_loss = nn.L1Loss(reduction="none")
+        self.bcewithlog_loss = nn.BCEWithLogitsLoss(reduction="none")
+        self.iou_loss = IOUloss(reduction="none")
+
+    def forward(self, pred_output, origin_reg, origin_obj, origin_cls,
+                   origin_grid, expanded_strides, labels):
+        assert len(origin_reg) == len(origin_obj) and len(origin_obj) == len(
+            origin_cls) and len(origin_cls) == len(
+                origin_grid) and len(origin_grid) > 0
+        # 输入数据格式预处理
+        bbox_preds = pred_output[:, :, :4]  # [batchsize, n_preds, 4]obj_preds
+        obj_preds = torch.cat(origin_obj, dim=1)  # [batchsize, n_preds, 1]
+        cls_preds = torch.cat(origin_cls, dim=1)  # [batchsize, n_preds, n_cls]
+        # 网格坐标信息
+        x_shifts, y_shifts = [], []
+        for grid in origin_grid:
+            x_shifts.append(grid[:, :, 0])
+            y_shifts.append(grid[:, :, 1])
         x_shifts = torch.cat(x_shifts, 1)  # [1, n_preds]
         y_shifts = torch.cat(y_shifts, 1)  # [1, n_preds]
         expanded_strides = torch.cat(expanded_strides, 1)  # [1, n_preds]
-        if self.use_l1:
-            origin_preds = torch.cat(origin_preds, 1)
+        origin_reg = torch.cat(origin_reg, 1)
+        num_classes = cls_preds.shape[-1]
+        print("pred_output.shape=", pred_output.shape)
+        print("bbox_preds.shape=", bbox_preds.shape)
+        print("obj_preds.shape=", obj_preds.shape)
+        print("cls_preds.shape=", cls_preds.shape)
+        print("x_shifts.shape=", x_shifts.shape)
+        print("y_shifts.shape=", y_shifts.shape)
+        print("expanded_strides.shape=", expanded_strides.shape)
+        print("origin_reg.shape=", origin_reg.shape)
 
+        # 逐个样本建立top K匹配并完成label信息的嵌入
         cls_targets = []
         reg_targets = []
         l1_targets = []
@@ -1016,138 +982,87 @@ class YOLOXHead(nn.Module):
 
         num_fg = 0.0
         num_gts = 0.0
-
-        for batch_idx in range(outputs.shape[0]):
+        nlabel = (labels.sum(dim=2) > 0).sum(dim=1)  # 目标个数
+        total_num_anchors = pred_output.shape[1]  # 预测目标个数
+        for batch_idx in range(pred_output.shape[0]):
             num_gt = int(nlabel[batch_idx])
             num_gts += num_gt
             if num_gt == 0:
-                cls_target = outputs.new_zeros((0, self.num_classes))
-                reg_target = outputs.new_zeros((0, 4))
-                l1_target = outputs.new_zeros((0, 4))
-                obj_target = outputs.new_zeros((total_num_anchors, 1))
-                fg_mask = outputs.new_zeros(total_num_anchors).bool()
+                cls_target = pred_output.new_zeros((0, num_classes))
+                reg_target = pred_output.new_zeros((0, 4))
+                l1_target = pred_output.new_zeros((0, 4))
+                obj_target = pred_output.new_zeros((total_num_anchors, 1))
+                fg_mask = pred_output.new_zeros(total_num_anchors).bool()
             else:
-                gt_bboxes_per_image = labels[batch_idx, :num_gt, 1:5] # [n_gt, 4]
-                gt_classes = labels[batch_idx, :num_gt, 0] # [n_gt]
-                bboxes_preds_per_image = bbox_preds[batch_idx] # [n_preds, 4]
-
-                try:
-                    (
-                        gt_matched_classes,
-                        fg_mask,
-                        pred_ious_this_matching,
-                        matched_gt_inds,
-                        num_fg_img,
-                    ) = self.get_assignments(  # noqa
-                        batch_idx,
-                        num_gt,
-                        total_num_anchors,
-                        gt_bboxes_per_image,
-                        gt_classes,
-                        bboxes_preds_per_image,
-                        expanded_strides,
-                        x_shifts,
-                        y_shifts,
-                        cls_preds,
-                        bbox_preds,
-                        obj_preds,
-                        labels,
-                        imgs,
-                    )
-                except RuntimeError:
-                    logger.error(
-                        "OOM RuntimeError is raised due to the huge memory cost during label assignment. \
-                           CPU mode is applied in this batch. If you want to avoid this issue, \
-                           try to reduce the batch size or image size.")
-                    torch.cuda.empty_cache()
-                    (
-                        gt_matched_classes,
-                        fg_mask,
-                        pred_ious_this_matching,
-                        matched_gt_inds,
-                        num_fg_img,
-                    ) = self.get_assignments(  # noqa
-                        batch_idx,
-                        num_gt,
-                        total_num_anchors,
-                        gt_bboxes_per_image,
-                        gt_classes,
-                        bboxes_preds_per_image,
-                        expanded_strides,
-                        x_shifts,
-                        y_shifts,
-                        cls_preds,
-                        bbox_preds,
-                        obj_preds,
-                        labels,
-                        imgs,
-                        "cpu",
-                    )
+                # 建立匹配
+                gt_bboxes_per_image = labels[batch_idx, :num_gt,
+                                             1:5]  # [n_gt, 4]
+                gt_classes = labels[batch_idx, :num_gt, 0]  # [n_gt]
+                bboxes_preds_per_image = bbox_preds[batch_idx]  # [n_preds, 4]
+                (
+                    gt_matched_classes,
+                    fg_mask,
+                    pred_ious_this_matching,
+                    matched_gt_inds,
+                    num_fg_img,
+                ) = self.get_assignments(  # noqa
+                    batch_idx,
+                    num_gt,
+                    total_num_anchors,
+                    gt_bboxes_per_image,
+                    gt_classes,
+                    bboxes_preds_per_image,
+                    expanded_strides,
+                    x_shifts,
+                    y_shifts,
+                    cls_preds,
+                    obj_preds,
+                )
 
                 torch.cuda.empty_cache()
                 num_fg += num_fg_img
-
+                # 创建目标
                 cls_target = F.one_hot(
                     gt_matched_classes.to(torch.int64),
-                    self.num_classes) * pred_ious_this_matching.unsqueeze(-1)
+                    num_classes) * pred_ious_this_matching.unsqueeze(-1)
                 obj_target = fg_mask.unsqueeze(-1)
                 reg_target = gt_bboxes_per_image[matched_gt_inds]
-                if self.use_l1:
-                    l1_target = self.get_l1_target(
-                        outputs.new_zeros((num_fg_img, 4)),
-                        gt_bboxes_per_image[matched_gt_inds],
-                        expanded_strides[0][fg_mask],
-                        x_shifts=x_shifts[0][fg_mask],
-                        y_shifts=y_shifts[0][fg_mask],
-                    )
-
+                l1_target = self.get_l1_target(
+                    pred_output.new_zeros((num_fg_img, 4)),
+                    gt_bboxes_per_image[matched_gt_inds],
+                    expanded_strides[0][fg_mask],
+                    x_shifts=x_shifts[0][fg_mask],
+                    y_shifts=y_shifts[0][fg_mask],
+                )
             cls_targets.append(cls_target)
             reg_targets.append(reg_target)
-            obj_targets.append(obj_target.to(dtype))
+            obj_targets.append(obj_target.to(torch.float32))
             fg_masks.append(fg_mask)
-            if self.use_l1:
-                l1_targets.append(l1_target)
+            l1_targets.append(l1_target)
 
         cls_targets = torch.cat(cls_targets, 0)
         reg_targets = torch.cat(reg_targets, 0)
         obj_targets = torch.cat(obj_targets, 0)
         fg_masks = torch.cat(fg_masks, 0)
-        if self.use_l1:
-            l1_targets = torch.cat(l1_targets, 0)
-        
-        print("fg_masks.shape", fg_masks.shape)
-        print("bbox_preds.shape", bbox_preds.shape)
-        print("reg_targets.shape", reg_targets.shape)
-        print("cls_preds.shape", cls_preds.shape)
-        print("cls_targets.shape", cls_targets.shape)
-        print("obj_preds.shape", obj_preds.shape)
-        print("obj_targets.shape", obj_targets.shape)
+        l1_targets = torch.cat(l1_targets, 0)
 
+        # 分别计算损失
         num_fg = max(num_fg, 1)
         loss_iou = (self.iou_loss(
             bbox_preds.view(-1, 4)[fg_masks], reg_targets)).sum() / num_fg
         loss_obj = (self.bcewithlog_loss(obj_preds.view(-1, 1),
                                          obj_targets)).sum() / num_fg
         loss_cls = (self.bcewithlog_loss(
-            cls_preds.view(-1, self.num_classes)[fg_masks],
+            cls_preds.view(-1, num_classes)[fg_masks],
             cls_targets)).sum() / num_fg
+        loss_l1 = 0.0
         if self.use_l1:
             loss_l1 = (self.l1_loss(
-                origin_preds.view(-1, 4)[fg_masks], l1_targets)).sum() / num_fg
-        else:
-            loss_l1 = 0.0
-
+                pred_output.view(-1, 4)[fg_masks], l1_targets)).sum() / num_fg
+        # 返回混合损失
         reg_weight = 5.0
         loss = reg_weight * loss_iou + loss_obj + loss_cls + loss_l1
-
-        return (
-            loss,
-            reg_weight * loss_iou,
-            loss_obj,
-            loss_cls,
-            loss_l1,
-            num_fg / max(num_gts, 1),
-        )
+        return loss
 
     def get_l1_target(self,
                       l1_target,
@@ -1175,10 +1090,7 @@ class YOLOXHead(nn.Module):
         x_shifts,
         y_shifts,
         cls_preds,
-        bbox_preds,
         obj_preds,
-        labels,
-        imgs,
         mode="gpu",
     ):
         """评估单个样本的损失
@@ -1196,8 +1108,6 @@ class YOLOXHead(nn.Module):
             cls_preds,              预测分类
             bbox_preds,             预测bbox
             obj_preds,              预测命中目标
-            labels,                 
-            imgs,
             mode="gpu",  
 
         Returns:
@@ -1209,14 +1119,14 @@ class YOLOXHead(nn.Module):
         
         """
 
-        if mode == "cpu":
-            print("------------CPU Mode for This Batch-------------")
-            gt_bboxes_per_image = gt_bboxes_per_image.cpu().float()
-            bboxes_preds_per_image = bboxes_preds_per_image.cpu().float()
-            gt_classes = gt_classes.cpu().float()
-            expanded_strides = expanded_strides.cpu().float()
-            x_shifts = x_shifts.cpu()
-            y_shifts = y_shifts.cpu()
+        # if mode == "cpu":
+        #     print("------------CPU Mode for This Batch-------------")
+        #     gt_bboxes_per_image = gt_bboxes_per_image.cpu().float()
+        #     bboxes_preds_per_image = bboxes_preds_per_image.cpu().float()
+        #     gt_classes = gt_classes.cpu().float()
+        #     expanded_strides = expanded_strides.cpu().float()
+        #     x_shifts = x_shifts.cpu()
+        #     y_shifts = y_shifts.cpu()
 
         # 将目标bbox嵌入成预测网格的mask
         fg_mask, is_in_boxes_and_center = self.get_in_boxes_info(
@@ -1241,12 +1151,13 @@ class YOLOXHead(nn.Module):
         # print("bboxes_preds_per_image.shape", bboxes_preds_per_image.shape)
         pair_wise_ious = bboxes_iou(gt_bboxes_per_image,
                                     bboxes_preds_per_image, False)
-        pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8) # [n_gt, n_valid_preds]
+        pair_wise_ious_loss = -torch.log(
+            pair_wise_ious + 1e-8)  # [n_gt, n_valid_preds]
         # print("pair_wise_ious_loss.shape", pair_wise_ious_loss.shape)
 
         # 计算分类损失
         gt_cls_per_image = (F.one_hot(gt_classes.to(
-            torch.int64), self.num_classes).float().unsqueeze(1).repeat(
+            torch.int64), cls_preds.shape[-1]).float().unsqueeze(1).repeat(
                 1, num_in_boxes_anchor, 1))
         if mode == "cpu":
             cls_preds_, obj_preds_ = cls_preds_.cpu(), obj_preds_.cpu()
@@ -1277,15 +1188,15 @@ class YOLOXHead(nn.Module):
         # print("matched_gt_inds.shape", matched_gt_inds.shape)
         # print("num_fg",num_fg)
 
-        if mode == "cpu":
-            # gt_matched_classes = gt_matched_classes.cuda()
-            # fg_mask = fg_mask.cuda()
-            # pred_ious_this_matching = pred_ious_this_matching.cuda()
-            # matched_gt_inds = matched_gt_inds.cuda()
-            gt_matched_classes = gt_matched_classes.cpu()
-            fg_mask = fg_mask.cpu()
-            pred_ious_this_matching = pred_ious_this_matching.cpu()
-            matched_gt_inds = matched_gt_inds.cpu()
+        # if mode == "cpu":
+        #     # gt_matched_classes = gt_matched_classes.cuda()
+        #     # fg_mask = fg_mask.cuda()
+        #     # pred_ious_this_matching = pred_ious_this_matching.cuda()
+        #     # matched_gt_inds = matched_gt_inds.cuda()
+        #     gt_matched_classes = gt_matched_classes.cpu()
+        #     fg_mask = fg_mask.cpu()
+        #     pred_ious_this_matching = pred_ious_this_matching.cpu()
+        #     matched_gt_inds = matched_gt_inds.cpu()
 
         return (
             gt_matched_classes,
@@ -1469,21 +1380,7 @@ class YOLOX(nn.Module):
         fpn_outs = self.backbone(x)
         # for fo in fpn_outs:
         #     print('fpn_outs:{}', fo.detach().numpy().shape)
-        if self.training:
-            assert targets is not None
-            loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.head(
-                fpn_outs, targets, x)
-            outputs = {
-                "total_loss": loss,
-                "iou_loss": iou_loss,
-                "l1_loss": l1_loss,
-                "conf_loss": conf_loss,
-                "cls_loss": cls_loss,
-                "num_fg": num_fg,
-            }
-        else:
-            outputs = self.head(fpn_outs)
-
+        outputs = self.head(fpn_outs)
         return outputs
 
 
@@ -1668,6 +1565,11 @@ class Exp:
             targets[..., 2::2] = targets[..., 2::2] * scale_y
         return inputs, targets
 
+    def get_loss(self):
+        """创建损失函数构建对象"""
+        self.loss_net = YoloxLoss()
+        return self.loss_net
+
     def get_optimizer(self, batch_size):
         """创建优化器对象"""
         if "optimizer" not in self.__dict__:
@@ -1701,7 +1603,7 @@ class Exp:
         return self.optimizer
 
     def get_lr_scheduler(self, lr, iters_per_epoch):
-
+        """创建学习旅规划器"""
         scheduler = LRScheduler(
             self.scheduler,
             lr,
@@ -1715,7 +1617,7 @@ class Exp:
         return scheduler
 
     def get_eval_loader(self, batch_size, testdev=False, legacy=False):
-
+        """创建验证集的数据载入器"""
         valdataset = COCODataset(
             data_dir=self.data_dir,
             json_file=self.val_ann
@@ -1738,7 +1640,7 @@ class Exp:
         return val_loader
 
     def get_evaluator(self, batch_size, testdev=False, legacy=False):
-
+        """创建评估器"""
         val_loader = self.get_eval_loader(batch_size, testdev, legacy)
         evaluator = COCOEvaluator(
             dataloader=val_loader,
@@ -1751,6 +1653,7 @@ class Exp:
         return evaluator
 
     def eval(self, model, evaluator, is_distributed, half=False):
+        """评估模型"""
         return evaluator.evaluate(model, is_distributed, half)
 
     @staticmethod
@@ -1821,6 +1724,7 @@ class Exp:
             'CUDA' if is_gpu else 'CPU'))
         # 创建模型
         model = self.get_model()
+        loss_net = self.get_loss()
         model.train()
         if is_gpu is True:
             # 该语句必须在创建optimizer之前
@@ -1851,9 +1755,9 @@ class Exp:
                     labels = labels.cuda()
                 # 前向推理
                 forward_start = time.time()
-                outputs = model(images, labels)
+                outputs = model(images)
+                loss = loss_net(*outputs, labels=labels)
                 forword_cost = time.time() - forward_start
-                loss = outputs["total_loss"]
                 # 反向传播
                 backward_start = time.time()
                 optimizer.zero_grad()  # 缓存梯度清零
@@ -1884,6 +1788,110 @@ class Exp:
                 idx_epoch, model_path))
 
 
+    @staticmethod
+    def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agnostic=False):
+        box_corner = prediction.new(prediction.shape)
+        box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 2] / 2
+        box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 3] / 2
+        box_corner[:, :, 2] = prediction[:, :, 0] + prediction[:, :, 2] / 2
+        box_corner[:, :, 3] = prediction[:, :, 1] + prediction[:, :, 3] / 2
+        prediction[:, :, :4] = box_corner[:, :, :4]
+
+        output = [None for _ in range(len(prediction))]
+        for i, image_pred in enumerate(prediction):
+
+            # If none are remaining => process next image
+            if not image_pred.size(0):
+                continue
+            # Get score and class with highest confidence
+            class_conf, class_pred = torch.max(image_pred[:, 5: 5 + num_classes], 1, keepdim=True)
+
+            conf_mask = (image_pred[:, 4] * class_conf.squeeze() >= conf_thre).squeeze()
+            # Detections ordered as (x1, y1, x2, y2, obj_conf, class_conf, class_pred)
+            detections = torch.cat((image_pred[:, :5], class_conf, class_pred.float()), 1)
+            detections = detections[conf_mask]
+            if not detections.size(0):
+                continue
+
+            if class_agnostic:
+                nms_out_index = torchvision.ops.nms(
+                    detections[:, :4],
+                    detections[:, 4] * detections[:, 5],
+                    nms_thre,
+                )
+            else:
+                nms_out_index = torchvision.ops.batched_nms(
+                    detections[:, :4],
+                    detections[:, 4] * detections[:, 5],
+                    detections[:, 6],
+                    nms_thre,
+                )
+
+            detections = detections[nms_out_index]
+            if output[i] is None:
+                output[i] = detections
+            else:
+                output[i] = torch.cat((output[i], detections))
+
+        return output
+
+
+    def demo(self, img_file, model_file, conf_thre=0.25, nms_thre=0.45, is_gpu=False):
+        """用于训练模型"""
+        logger.info('starting train model in {} mode ...'.format(
+            'CUDA' if is_gpu else 'CPU'))
+        device = 'cuda' if is_gpu is True else 'cpu'
+
+        # 创建模型
+        model = self.get_model()
+        model.eval()
+        if is_gpu is True:
+            # 该语句必须在创建optimizer之前
+            model = model.cuda()
+        # 载入模型文件
+        if not os.path.isfile(model_file):
+            raise ValueError('not found model from:' + model_file)
+        ckpt = torch.load(model_file, map_location=torch.device(device))
+        if 'model' not in ckpt:
+            raise ValueError('model filed not exist')
+        model.load_state_dict(ckpt['model'])
+        # 载入图片
+        img = cv2.imread(img_file, cv2.IMREAD_UNCHANGED)
+        if img is None:
+            raise ValueError('failed to load image from:' + img_file)
+        img_resized = cv2.resize(img, (640, 640))
+        print(img_resized.shape)
+        # 数据格式准备
+        img_input = torch.from_numpy(img_resized)
+        img_input = img_input.unsqueeze(dim=0)
+        img_input = img_input.permute(0,3,1,2).float()
+        print(img_input.shape, img_input.dtype)
+        if is_gpu is True:
+            img_input = img_input.cuda()
+        # 推理过程
+        outputs = model(img_input)
+        preds = outputs[0]
+        # NMS
+        preds = Exp.postprocess(preds, 80, conf_thre=conf_thre, nms_thre=nms_thre)
+        # 显示
+        for idx, detections in enumerate(preds):
+            plt.clf()
+            img_show = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            plt.imshow(img_show)
+            gca = plt.gca()
+            for i in range(detections.shape[0]):
+                det = detections[i].detach().numpy()
+                scales = [img.shape[1]/img_resized.shape[1], img.shape[0]/img_resized.shape[0]]
+                det[0] = det[0] * scales[0]
+                det[1] = det[1] * scales[1]
+                det[2] = det[2] * scales[0]
+                det[3] = det[3] * scales[1]
+                rect=  plt.Rectangle((det[0], det[1]), det[2]-det[0], det[3]-det[1], fill=False, edgecolor='red', linewidth=1)
+                gca.add_patch(rect)
+                plt.text(det[0], det[1], COCODataset.COCO_CLASSES[round(det[6])], color='blue')
+            plt.show()
+
+
 def str2bool(v):
     """用于命令行解析bool类型的参数"""
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -1900,6 +1908,8 @@ import argparse
 
 def parse_args():
     args = argparse.ArgumentParser(description='yolox')
+    args.add_argument('--phase', type=str, default='train', choices=['train', 'demo'])
+    args.add_argument('--img-path', type=str, default=None)
     args.add_argument('--gpu', type=str2bool, default=False)
     args.add_argument('--colab', type=str2bool, default=False)
     args.add_argument('--data_dir',
@@ -1909,6 +1919,8 @@ def parse_args():
     args.add_argument('--batch_size', type=int, default=4)
     args.add_argument('--num_data_worker', type=int, default=4)
     args.add_argument('--no_aug', type=str2bool, default=False)
+    args.add_argument('--conf-thresh', type=float, default=0.25)
+    args.add_argument('--nms-thresh', type=float, default=0.45)
     return args.parse_args()
 
 
@@ -1925,7 +1937,12 @@ def main():
               batch_size=args.batch_size,
               num_data_worker=args.num_data_worker)
     # 执行训练流程
-    exp.train(args.gpu, args.no_aug)
+    if args.phase == 'train':
+        exp.train(args.gpu, args.no_aug)
+    elif args.phase == 'demo':
+        img_file = './data/mscoco-sample/000000000139.jpg'
+        model_file = './YOLOX_outputs/yolox_l.pth'
+        exp.demo(img_file, model_file, conf_thre=args.conf_thresh, nms_thre=args.nms_thresh)
 
 
 if __name__ == '__main__':
