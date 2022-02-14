@@ -938,7 +938,17 @@ class YOLOXHead(nn.Module):
         pred_output = torch.cat(outputs, dim=1)
         return pred_output, origin_reg, origin_obj, origin_cls, origin_grid, expanded_strides
 
-    def build_loss(self, pred_output, origin_reg, origin_obj, origin_cls,
+
+class YoloxLoss(nn.Module):
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.use_l1 = False
+        self.l1_loss = nn.L1Loss(reduction="none")
+        self.bcewithlog_loss = nn.BCEWithLogitsLoss(reduction="none")
+        self.iou_loss = IOUloss(reduction="none")
+
+    def forward(self, pred_output, origin_reg, origin_obj, origin_cls,
                    origin_grid, expanded_strides, labels):
         assert len(origin_reg) == len(origin_obj) and len(origin_obj) == len(
             origin_cls) and len(origin_cls) == len(
@@ -956,6 +966,7 @@ class YOLOXHead(nn.Module):
         y_shifts = torch.cat(y_shifts, 1)  # [1, n_preds]
         expanded_strides = torch.cat(expanded_strides, 1)  # [1, n_preds]
         origin_reg = torch.cat(origin_reg, 1)
+        num_classes = cls_preds.shape[-1]
         print("pred_output.shape=", pred_output.shape)
         print("bbox_preds.shape=", bbox_preds.shape)
         print("obj_preds.shape=", obj_preds.shape)
@@ -980,7 +991,7 @@ class YOLOXHead(nn.Module):
             num_gt = int(nlabel[batch_idx])
             num_gts += num_gt
             if num_gt == 0:
-                cls_target = pred_output.new_zeros((0, self.num_classes))
+                cls_target = pred_output.new_zeros((0, num_classes))
                 reg_target = pred_output.new_zeros((0, 4))
                 l1_target = pred_output.new_zeros((0, 4))
                 obj_target = pred_output.new_zeros((total_num_anchors, 1))
@@ -1016,7 +1027,7 @@ class YOLOXHead(nn.Module):
                 # 创建目标
                 cls_target = F.one_hot(
                     gt_matched_classes.to(torch.int64),
-                    self.num_classes) * pred_ious_this_matching.unsqueeze(-1)
+                    num_classes) * pred_ious_this_matching.unsqueeze(-1)
                 obj_target = fg_mask.unsqueeze(-1)
                 reg_target = gt_bboxes_per_image[matched_gt_inds]
                 l1_target = self.get_l1_target(
@@ -1045,7 +1056,7 @@ class YOLOXHead(nn.Module):
         loss_obj = (self.bcewithlog_loss(obj_preds.view(-1, 1),
                                          obj_targets)).sum() / num_fg
         loss_cls = (self.bcewithlog_loss(
-            cls_preds.view(-1, self.num_classes)[fg_masks],
+            cls_preds.view(-1, num_classes)[fg_masks],
             cls_targets)).sum() / num_fg
         loss_l1 = 0.0
         if self.use_l1:
@@ -1149,7 +1160,7 @@ class YOLOXHead(nn.Module):
 
         # 计算分类损失
         gt_cls_per_image = (F.one_hot(gt_classes.to(
-            torch.int64), self.num_classes).float().unsqueeze(1).repeat(
+            torch.int64), cls_preds.shape[-1]).float().unsqueeze(1).repeat(
                 1, num_in_boxes_anchor, 1))
         if mode == "cpu":
             cls_preds_, obj_preds_ = cls_preds_.cpu(), obj_preds_.cpu()
@@ -1557,6 +1568,11 @@ class Exp:
             targets[..., 2::2] = targets[..., 2::2] * scale_y
         return inputs, targets
 
+    def get_loss(self):
+        """创建损失函数构建对象"""
+        self.loss_net = YoloxLoss()
+        return self.loss_net
+
     def get_optimizer(self, batch_size):
         """创建优化器对象"""
         if "optimizer" not in self.__dict__:
@@ -1590,7 +1606,7 @@ class Exp:
         return self.optimizer
 
     def get_lr_scheduler(self, lr, iters_per_epoch):
-
+        """创建学习旅规划器"""
         scheduler = LRScheduler(
             self.scheduler,
             lr,
@@ -1604,7 +1620,7 @@ class Exp:
         return scheduler
 
     def get_eval_loader(self, batch_size, testdev=False, legacy=False):
-
+        """创建验证集的数据载入器"""
         valdataset = COCODataset(
             data_dir=self.data_dir,
             json_file=self.val_ann
@@ -1627,7 +1643,7 @@ class Exp:
         return val_loader
 
     def get_evaluator(self, batch_size, testdev=False, legacy=False):
-
+        """创建评估器"""
         val_loader = self.get_eval_loader(batch_size, testdev, legacy)
         evaluator = COCOEvaluator(
             dataloader=val_loader,
@@ -1640,6 +1656,7 @@ class Exp:
         return evaluator
 
     def eval(self, model, evaluator, is_distributed, half=False):
+        """评估模型"""
         return evaluator.evaluate(model, is_distributed, half)
 
     @staticmethod
@@ -1710,6 +1727,7 @@ class Exp:
             'CUDA' if is_gpu else 'CPU'))
         # 创建模型
         model = self.get_model()
+        loss_net = self.get_loss()
         model.train()
         if is_gpu is True:
             # 该语句必须在创建optimizer之前
@@ -1741,7 +1759,7 @@ class Exp:
                 # 前向推理
                 forward_start = time.time()
                 outputs = model(images)
-                loss = model.head.build_loss(*outputs, labels=labels)
+                loss = loss_net(*outputs, labels=labels)
                 forword_cost = time.time() - forward_start
                 # 反向传播
                 backward_start = time.time()
