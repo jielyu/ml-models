@@ -811,6 +811,8 @@ class YOLOXHead(nn.Module):
                  torch.arange(feat_w)])
             grid = torch.stack((xv, yv), 2).view(1, 1, feat_h, feat_w,
                                                  2).type(torch.float32)
+            if torch.cuda.is_available():
+                grid = grid.cuda()
             self.grids.append(grid)
 
     def initialize_biases(self, prior_prob):
@@ -833,7 +835,7 @@ class YOLOXHead(nn.Module):
         expanded_strides = []
 
         for k, x in enumerate(xin):
-            print("iter={}, x.shape={}".format(k, x.shape))
+            # print("iter={}, x.shape={}".format(k, x.shape))
             stride_this_level = self.strides[k]
             # 分离不同任务的分支结构
             x = self.stems[k](x)
