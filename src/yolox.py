@@ -864,6 +864,7 @@ class YOLOXHead(nn.Module):
 
         for k, (cls_conv, reg_conv, stride_this_level, x) in enumerate(
                 zip(self.cls_convs, self.reg_convs, self.strides, xin)):
+            print("iter={}, x.shape={}".format(k, x.shape))
             x = self.stems[k](x)
             cls_x = x
             reg_x = x
@@ -874,13 +875,16 @@ class YOLOXHead(nn.Module):
             reg_feat = reg_conv(reg_x)
             reg_output = self.reg_preds[k](reg_feat)
             obj_output = self.obj_preds[k](reg_feat)
+            print("iter={}, cls_output.shape={}".format(k, cls_output.shape))
+            print("iter={}, reg_output.shape={}".format(k, reg_output.shape))
+            print("iter={}, obj_output.shape={}".format(k, obj_output.shape))
 
             if self.training:
                 output = torch.cat([reg_output, obj_output, cls_output], 1)
                 output, grid = self.get_output_and_grid(
                     output, k, stride_this_level, xin[0].type())
-                x_shifts.append(grid[:, :, 0])
-                y_shifts.append(grid[:, :, 1])
+                x_shifts.append(grid[:, :, 0])  # [N, n_preds]
+                y_shifts.append(grid[:, :, 1])  # [N, n_preds]
                 expanded_strides.append(
                     torch.zeros(
                         1, grid.shape[1]).fill_(stride_this_level).type_as(
@@ -899,7 +903,7 @@ class YOLOXHead(nn.Module):
                     [reg_output,
                      obj_output.sigmoid(),
                      cls_output.sigmoid()], 1)
-
+            print("iter={}, output.shape={}".format(k, output.shape))
             outputs.append(output)
         # for o in outputs:
         #     print('output:{}', o.detach().numpy().shape)
@@ -973,17 +977,34 @@ class YOLOXHead(nn.Module):
         origin_preds,
         dtype,
     ):
-        bbox_preds = outputs[:, :, :4]  # [batch, n_anchors_all, 4]
-        obj_preds = outputs[:, :, 4].unsqueeze(-1)  # [batch, n_anchors_all, 1]
-        cls_preds = outputs[:, :, 5:]  # [batch, n_anchors_all, n_cls]
+        """计算mini-batch的损失
+           
+        Args:
+            imgs,
+            x_shifts,           list([batchsize, n_preds])
+            y_shifts,           list([batchsize, n_preds])
+            expanded_strides,   list([1, n_preds/scales])
+            labels,             [batchsize, objs, (cate, x, y, w, h)]
+            outputs,            [batchsize, n_preds, ch[5+cates]]
+            origin_preds,       [batchsize, n_preds, 4]
+            dtype,              
+
+        Returns:
+            loss, 总的损失
+
+        """
+        print("outputs.shape", outputs.shape)
+        bbox_preds = outputs[:, :, :4]  # [batchsize, n_preds, 4]
+        obj_preds = outputs[:, :, 4].unsqueeze(-1)  # [batchsize, n_preds, 1]
+        cls_preds = outputs[:, :, 5:]  # [batchsize, n_preds, n_cls]
 
         # calculate targets
         nlabel = (labels.sum(dim=2) > 0).sum(dim=1)  # number of objects
 
         total_num_anchors = outputs.shape[1]
-        x_shifts = torch.cat(x_shifts, 1)  # [1, n_anchors_all]
-        y_shifts = torch.cat(y_shifts, 1)  # [1, n_anchors_all]
-        expanded_strides = torch.cat(expanded_strides, 1)
+        x_shifts = torch.cat(x_shifts, 1)  # [1, n_preds]
+        y_shifts = torch.cat(y_shifts, 1)  # [1, n_preds]
+        expanded_strides = torch.cat(expanded_strides, 1)  # [1, n_preds]
         if self.use_l1:
             origin_preds = torch.cat(origin_preds, 1)
 
@@ -1006,9 +1027,9 @@ class YOLOXHead(nn.Module):
                 obj_target = outputs.new_zeros((total_num_anchors, 1))
                 fg_mask = outputs.new_zeros(total_num_anchors).bool()
             else:
-                gt_bboxes_per_image = labels[batch_idx, :num_gt, 1:5]
-                gt_classes = labels[batch_idx, :num_gt, 0]
-                bboxes_preds_per_image = bbox_preds[batch_idx]
+                gt_bboxes_per_image = labels[batch_idx, :num_gt, 1:5] # [n_gt, 4]
+                gt_classes = labels[batch_idx, :num_gt, 0] # [n_gt]
+                bboxes_preds_per_image = bbox_preds[batch_idx] # [n_preds, 4]
 
                 try:
                     (
@@ -1093,6 +1114,14 @@ class YOLOXHead(nn.Module):
         fg_masks = torch.cat(fg_masks, 0)
         if self.use_l1:
             l1_targets = torch.cat(l1_targets, 0)
+        
+        print("fg_masks.shape", fg_masks.shape)
+        print("bbox_preds.shape", bbox_preds.shape)
+        print("reg_targets.shape", reg_targets.shape)
+        print("cls_preds.shape", cls_preds.shape)
+        print("cls_targets.shape", cls_targets.shape)
+        print("obj_preds.shape", obj_preds.shape)
+        print("obj_targets.shape", obj_targets.shape)
 
         num_fg = max(num_fg, 1)
         loss_iou = (self.iou_loss(
@@ -1152,6 +1181,33 @@ class YOLOXHead(nn.Module):
         imgs,
         mode="gpu",
     ):
+        """评估单个样本的损失
+        
+        Args:
+            batch_idx,              样本索引
+            num_gt,                 真值目标个数
+            total_num_anchors,      锚点数量
+            gt_bboxes_per_image,    样本目标bbox
+            gt_classes,             样本目标类别
+            bboxes_preds_per_image, 预测bbox, [n_preds, 4]
+            expanded_strides,
+            x_shifts,               预测网格x坐标偏移量
+            y_shifts,               预测网格y坐标偏移量
+            cls_preds,              预测分类
+            bbox_preds,             预测bbox
+            obj_preds,              预测命中目标
+            labels,                 
+            imgs,
+            mode="gpu",  
+
+        Returns:
+            gt_matched_classes,
+            fg_mask,
+            pred_ious_this_matching,
+            matched_gt_inds,
+            num_fg,
+        
+        """
 
         if mode == "cpu":
             print("------------CPU Mode for This Batch-------------")
@@ -1162,6 +1218,7 @@ class YOLOXHead(nn.Module):
             x_shifts = x_shifts.cpu()
             y_shifts = y_shifts.cpu()
 
+        # 将目标bbox嵌入成预测网格的mask
         fg_mask, is_in_boxes_and_center = self.get_in_boxes_info(
             gt_bboxes_per_image,
             expanded_strides,
@@ -1176,18 +1233,21 @@ class YOLOXHead(nn.Module):
         obj_preds_ = obj_preds[batch_idx][fg_mask]
         num_in_boxes_anchor = bboxes_preds_per_image.shape[0]
 
+        # 计算IoU损失
         if mode == "cpu":
             gt_bboxes_per_image = gt_bboxes_per_image.cpu()
             bboxes_preds_per_image = bboxes_preds_per_image.cpu()
-
+        # print("gt_bboxes_per_image.shape=", gt_bboxes_per_image.shape)
+        # print("bboxes_preds_per_image.shape", bboxes_preds_per_image.shape)
         pair_wise_ious = bboxes_iou(gt_bboxes_per_image,
                                     bboxes_preds_per_image, False)
+        pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8) # [n_gt, n_valid_preds]
+        # print("pair_wise_ious_loss.shape", pair_wise_ious_loss.shape)
 
+        # 计算分类损失
         gt_cls_per_image = (F.one_hot(gt_classes.to(
             torch.int64), self.num_classes).float().unsqueeze(1).repeat(
                 1, num_in_boxes_anchor, 1))
-        pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8)
-
         if mode == "cpu":
             cls_preds_, obj_preds_ = cls_preds_.cpu(), obj_preds_.cpu()
 
@@ -1200,9 +1260,10 @@ class YOLOXHead(nn.Module):
                 cls_preds_.sqrt_(), gt_cls_per_image, reduction="none").sum(-1)
         del cls_preds_
 
+        # 计算匹配代价
         cost = (pair_wise_cls_loss + 3.0 * pair_wise_ious_loss + 100000.0 *
                 (~is_in_boxes_and_center))
-
+        # 计算top k 匹配
         (
             num_fg,
             gt_matched_classes,
@@ -1211,12 +1272,20 @@ class YOLOXHead(nn.Module):
         ) = self.dynamic_k_matching(cost, pair_wise_ious, gt_classes, num_gt,
                                     fg_mask)
         del pair_wise_cls_loss, cost, pair_wise_ious, pair_wise_ious_loss
+        # print("gt_matched_classes.shape", gt_matched_classes.shape)
+        # print("pred_ious_this_matching.shape", pred_ious_this_matching.shape)
+        # print("matched_gt_inds.shape", matched_gt_inds.shape)
+        # print("num_fg",num_fg)
 
         if mode == "cpu":
-            gt_matched_classes = gt_matched_classes.cuda()
-            fg_mask = fg_mask.cuda()
-            pred_ious_this_matching = pred_ious_this_matching.cuda()
-            matched_gt_inds = matched_gt_inds.cuda()
+            # gt_matched_classes = gt_matched_classes.cuda()
+            # fg_mask = fg_mask.cuda()
+            # pred_ious_this_matching = pred_ious_this_matching.cuda()
+            # matched_gt_inds = matched_gt_inds.cuda()
+            gt_matched_classes = gt_matched_classes.cpu()
+            fg_mask = fg_mask.cpu()
+            pred_ious_this_matching = pred_ious_this_matching.cpu()
+            matched_gt_inds = matched_gt_inds.cpu()
 
         return (
             gt_matched_classes,
@@ -1235,17 +1304,34 @@ class YOLOXHead(nn.Module):
         total_num_anchors,
         num_gt,
     ):
+        """计算groundtruth嵌入预测网格的mask
+        
+        Args:
+            gt_bboxes_per_image, 单样本真值bbox参数， [N, 4]
+            expanded_strides,
+            x_shifts,            预测网格x坐标偏移量
+            y_shifts,            预测网格y坐标偏移量
+            total_num_anchors,   锚点数量
+            num_gt,              目标个数
+
+        Returns:
+            is_in_boxes_anchor,     网格命中目标mask
+            is_in_boxes_and_center  网格命中目标中心mask
+
+        """
+        # 计算预测网格表示的中心点坐标
         expanded_strides_per_image = expanded_strides[0]
         x_shifts_per_image = x_shifts[0] * expanded_strides_per_image
         y_shifts_per_image = y_shifts[0] * expanded_strides_per_image
         x_centers_per_image = (
             (x_shifts_per_image +
              0.5 * expanded_strides_per_image).unsqueeze(0).repeat(num_gt, 1)
-        )  # [n_anchor] -> [n_gt, n_anchor]
+        )  # [n_anchor] -> [n_gt, n_preds]
         y_centers_per_image = (
             (y_shifts_per_image +
              0.5 * expanded_strides_per_image).unsqueeze(0).repeat(num_gt, 1))
 
+        # 计算目标bbox的坐标范围
         gt_bboxes_per_image_l = (
             (gt_bboxes_per_image[:, 0] -
              0.5 * gt_bboxes_per_image[:, 2]).unsqueeze(1).repeat(
@@ -1263,6 +1349,7 @@ class YOLOXHead(nn.Module):
              0.5 * gt_bboxes_per_image[:, 3]).unsqueeze(1).repeat(
                  1, total_num_anchors))
 
+        # 判断网格表示的中心点是否在目标bbox范围内
         b_l = x_centers_per_image - gt_bboxes_per_image_l
         b_r = gt_bboxes_per_image_r - x_centers_per_image
         b_t = y_centers_per_image - gt_bboxes_per_image_t
@@ -1271,10 +1358,10 @@ class YOLOXHead(nn.Module):
 
         is_in_boxes = bbox_deltas.min(dim=-1).values > 0.0
         is_in_boxes_all = is_in_boxes.sum(dim=0) > 0
+
+        # 计算目标中心的坐标范围
         # in fixed center
-
         center_radius = 2.5
-
         gt_bboxes_per_image_l = (
             gt_bboxes_per_image[:, 0]).unsqueeze(1).repeat(
                 1, total_num_anchors
@@ -1291,7 +1378,7 @@ class YOLOXHead(nn.Module):
             gt_bboxes_per_image[:, 1]).unsqueeze(1).repeat(
                 1, total_num_anchors
             ) + center_radius * expanded_strides_per_image.unsqueeze(0)
-
+        # 判断网格点=表示的中心点是否命中目标bbox中心
         c_l = x_centers_per_image - gt_bboxes_per_image_l
         c_r = gt_bboxes_per_image_r - x_centers_per_image
         c_t = y_centers_per_image - gt_bboxes_per_image_t
@@ -1300,15 +1387,31 @@ class YOLOXHead(nn.Module):
         is_in_centers = center_deltas.min(dim=-1).values > 0.0
         is_in_centers_all = is_in_centers.sum(dim=0) > 0
 
-        # in boxes and in centers
+        # 命中目标bbox， [n_preds,]
         is_in_boxes_anchor = is_in_boxes_all | is_in_centers_all
-
+        # 命中目标中心, [n_preds,]
         is_in_boxes_and_center = (is_in_boxes[:, is_in_boxes_anchor]
                                   & is_in_centers[:, is_in_boxes_anchor])
         return is_in_boxes_anchor, is_in_boxes_and_center
 
     def dynamic_k_matching(self, cost, pair_wise_ious, gt_classes, num_gt,
                            fg_mask):
+        """动态K匹配
+        
+        Args:
+            cost,             损失矩阵，[n_gt, n_preds]
+            pair_wise_ious,   匹配IOU，[n_gt, n_prods]
+            gt_classes,       真值目标的类别 [n_gt,]
+            num_gt,           真值数量
+            fg_mask           匹配mask, [n_preds,]
+
+        Returns:
+            num_fg,                     匹配成功的预测数, n_match_pred
+            gt_matched_classes,         匹配成功的目标类别, [n_match_pred,]
+            pred_ious_this_matching,    匹配成功的iou, [n_match_pred,]
+            matched_gt_inds             匹配成功的目标索引, [n_match_pred, ]
+        
+        """
         # Dynamic K
         # ---------------------------------------------------------------
         matching_matrix = torch.zeros_like(cost, dtype=torch.uint8)
@@ -1395,6 +1498,8 @@ from dataset.mosaic_detection import MosaicDetection
 from learning_config.lr_scheduler import LRScheduler
 
 import time
+
+
 class Exp:
 
     def __init__(self,
@@ -1681,7 +1786,8 @@ class Exp:
         if lastest_model_path is not None and os.path.isfile(
                 lastest_model_path):
             # 载入模型文件
-            ckpt = torch.load(lastest_model_path, map_location=torch.device(device))
+            ckpt = torch.load(lastest_model_path,
+                              map_location=torch.device(device))
             if 'model' in ckpt and 'optimizer' in ckpt and 'start_epoch' in ckpt:
                 # 恢复状态
                 model.load_state_dict(ckpt['model'])
@@ -1711,7 +1817,8 @@ class Exp:
 
     def train(self, is_gpu=False, no_aug=False):
         """用于训练模型"""
-        logger.info('starting train model in {} mode ...'.format('CUDA' if is_gpu else 'CPU'))
+        logger.info('starting train model in {} mode ...'.format(
+            'CUDA' if is_gpu else 'CPU'))
         # 创建模型
         model = self.get_model()
         model.train()
@@ -1730,8 +1837,9 @@ class Exp:
             self.basic_lr_per_img * self.batch_size, num_train_iters)
         # 断点接续训练
         device = 'cuda' if is_gpu is True else 'cpu'
-        start_epoch = 1 + self.resume_model(self.output_dir, model, optimizer, device)
-        
+        start_epoch = 1 + self.resume_model(self.output_dir, model, optimizer,
+                                            device)
+
         # 训练迭代
         for idx_epoch in range(start_epoch, self.max_epoch):
             for idx_iter, batch in enumerate(train_loader):
@@ -1761,11 +1869,14 @@ class Exp:
                 # 打印日志
                 if idx_iter % 100 == 0:
                     logger.info(
-                        '[{}/{}][{}/{}] train phase. loss={:.4f}, timecost=[f:{:.4f}, b:{:.4f}]'.format(
-                            idx_epoch, self.max_epoch, idx_iter,
-                            num_train_iters, loss_value, forword_cost, backward_cost))
+                        '[{}/{}][{}/{}] train phase. loss={:.4f}, timecost=[f:{:.4f}, b:{:.4f}]'
+                        .format(idx_epoch, self.max_epoch, idx_iter,
+                                num_train_iters, loss_value, forword_cost,
+                                backward_cost))
                 if (idx_iter + 1 == num_train_iters):
                     break
+                break
+            break
             # 保存模型
             model_path = self.save_model(self.output_dir, model, optimizer,
                                          idx_epoch, loss_value)
@@ -1785,6 +1896,8 @@ def str2bool(v):
 
 # import matplotlib.pyplot as plt
 import argparse
+
+
 def parse_args():
     args = argparse.ArgumentParser(description='yolox')
     args.add_argument('--gpu', type=str2bool, default=False)
