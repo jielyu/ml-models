@@ -12,7 +12,7 @@ To store code for machine learning experiments
 使用VggNet在CelebA数据集上测试分类效果
 
 |序号 ID|实验名 Experiment Name |精度 Acc|备注 Mark|
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+|:---:|:---:|:---:|:---:|
 |1| vggnet_on_celeba|acc=90.17%|Without BN|
 |2|vggnet_bn_on_celeba|acc=90.62%|With BN|
 
@@ -23,7 +23,7 @@ To store code for machine learning experiments
 使用Small VggNet 对12306的验证码进行识别
 
 |序号 ID|实验名 Experiment Name |精度 Acc|备注 Mark|
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+|:---:|:---:|:---:|:---:|
 |1|smallervgg_bn_on_12306verifycode|acc=95%|With BN|
 
 ### 3. YoloX
