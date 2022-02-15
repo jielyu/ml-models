@@ -428,7 +428,9 @@ class COCOEvaluator:
             summary (sr): summary info of evaluation.
         """
         # TODO half to amp_test
-        tensor_type = torch.cuda.HalfTensor if half else torch.cuda.FloatTensor
+        tensor_type = torch.FloatTensor
+        if torch.cuda.is_available():
+            tensor_type = torch.cuda.HalfTensor if half else torch.cuda.FloatTensor
         model = model.eval()
         if half:
             model = model.half()
@@ -450,7 +452,7 @@ class COCOEvaluator:
                 if is_time_record:
                     start = time.time()
 
-                outputs = model(imgs)
+                outputs = model(imgs)[0]
                 if decoder is not None:
                     outputs = decoder(outputs, dtype=outputs.type())
 
@@ -466,9 +468,11 @@ class COCOEvaluator:
 
             data_list.extend(
                 self.convert_to_coco_format(outputs, info_imgs, ids))
-
-        statistics = torch.cuda.FloatTensor(
+        statistics = torch.FloatTensor(
             [inference_time, nms_time, n_samples])
+        if torch.cuda.is_available():
+            statistics = torch.cuda.FloatTensor(
+                [inference_time, nms_time, n_samples])
 
         eval_results = self.evaluate_prediction(data_list, statistics)
         return eval_results

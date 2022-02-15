@@ -1639,10 +1639,6 @@ class Exp:
         )
         return evaluator
 
-    def eval(self, model, evaluator, is_distributed, half=False):
-        """评估模型"""
-        return evaluator.evaluate(model, is_distributed, half)
-
     @staticmethod
     def get_latest_file(file_dir, cont='yolox'):
         """用于获取指定目录下的最新文件
@@ -1685,7 +1681,7 @@ class Exp:
                 start_epoch = ckpt['start_epoch']
                 logger.info('resume model at epoch {} from {} succ'.format(
                     start_epoch, lastest_model_path))
-        return start_epoch
+        return start_epoch+1, lastest_model_path
 
     @staticmethod
     def save_model(save_dir, model, optimizer, epoch, loss):
@@ -1720,17 +1716,17 @@ class Exp:
         optimizer = self.get_optimizer(self.batch_size)
         # 创建数据载入器
         train_loader = self.get_data_loader(self.batch_size, no_aug)
-        eval_loader = self.get_eval_loader(self.batch_size)
         num_train_iters = len(train_loader)
-        num_eval_iters = len(eval_loader)
         # 创建学习率规划对象
         lr_scheduler = self.get_lr_scheduler(
             self.basic_lr_per_img * self.batch_size, num_train_iters)
         # 断点接续训练
         device = 'cuda' if is_gpu is True else 'cpu'
-        start_epoch = 1 + self.resume_model(self.output_dir, model, optimizer,
+        start_epoch, start_model_file = self.resume_model(self.output_dir, model, optimizer,
                                             device)
-
+        # 评估断点续训的模型
+        if start_epoch > 0:
+            self.eval(start_model_file, is_gpu=is_gpu)
         # 训练迭代
         for idx_epoch in range(start_epoch, self.max_epoch):
             for idx_iter, batch in enumerate(train_loader):
@@ -1771,6 +1767,43 @@ class Exp:
                                          idx_epoch, loss_value)
             logger.info('save {}-epoch model to {}'.format(
                 idx_epoch, model_path))
+            # 评估保存下来的模型
+            self.eval(model_path, is_gpu=is_gpu)
+
+    def eval(self, model_file, is_gpu=False):
+        """用于评估模型"""
+        logger.info('start evaluating model:{} ...'.format(model_file))
+        device = 'cuda' if is_gpu is True else 'cpu'
+        exp = Exp(data_dir=self.data_dir,
+              output_dir=self.output_dir,
+              batch_size=self.batch_size,
+              num_data_worker=self.data_num_workers)
+        # 创建模型
+        model = exp.get_model()
+        if is_gpu is True:
+            model = model.cuda()
+        # 载入模型文件
+        if not os.path.isfile(model_file):
+            raise ValueError('not found model from:' + model_file)
+        ckpt = torch.load(model_file, map_location=torch.device(device))
+        if 'model' not in ckpt:
+            raise ValueError('model filed not exist')
+        model.load_state_dict(ckpt['model'])
+        # 创建数据载入器
+        eval_loader = self.get_eval_loader(self.batch_size)
+        # 创建评估器
+        evaluator = COCOEvaluator(
+            dataloader=eval_loader,
+            img_size=self.test_size,
+            confthre=self.test_conf,
+            nmsthre=self.nmsthre,
+            num_classes=self.num_classes,
+            testdev=False,
+        )
+        # 评估
+        eval_res = evaluator.evaluate(model)
+        logger.info('AP={}, Recall={}'.format(eval_res[0], eval_res[1]))
+        logger.info(eval_res[2])
 
     @staticmethod
     def postprocess(prediction,
