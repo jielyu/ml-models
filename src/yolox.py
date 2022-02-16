@@ -1802,7 +1802,7 @@ class Exp:
         )
         # 评估
         eval_res = evaluator.evaluate(model)
-        logger.info('AP={}, Recall={}'.format(eval_res[0], eval_res[1]))
+        logger.info('AP={}, AP={}'.format(eval_res[0], eval_res[1]))
         logger.info(eval_res[2])
 
     @staticmethod
