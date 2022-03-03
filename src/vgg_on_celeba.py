@@ -1,4 +1,4 @@
-#encoding: utf-8
+# encoding: utf-8
 
 import os
 import time
@@ -9,10 +9,11 @@ import json
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+
 # uncomment if run in terminal
 matplotlib.use("Agg")
 # uncomment if would like to run on plaidml backend
-#os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
+# os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
 
 import cv2
 import pandas as pd
@@ -28,12 +29,17 @@ from keras.models import load_model, Model
 from keras.preprocessing.image import img_to_array
 from keras.optimizers import Adam
 from keras.preprocessing.image import ImageDataGenerator
-from keras.callbacks import Callback, EarlyStopping, \
-    ReduceLROnPlateau, ModelCheckpoint, CSVLogger
+from keras.callbacks import (
+    Callback,
+    EarlyStopping,
+    ReduceLROnPlateau,
+    ModelCheckpoint,
+    CSVLogger,
+)
 
 
 def check_dir(dirname, report_error=False):
-    """ Check existence of specific directory
+    """Check existence of specific directory
     Args:
         dirname: path to specific directory
         report_error: if it is True, error will be report when dirname not exists
@@ -41,50 +47,51 @@ def check_dir(dirname, report_error=False):
     Return:
         None
     Raise:
-        ValueError, if report_error is True and dirname not exists 
+        ValueError, if report_error is True and dirname not exists
     """
     if not os.path.exists(dirname):
         if report_error is True:
-            raise ValueError('not exist directory: {}'.format(dirname))
+            raise ValueError("not exist directory: {}".format(dirname))
         else:
             os.makedirs(dirname)
-            print('not exist {}, but has been created'.format(dirname))
+            print("not exist {}, but has been created".format(dirname))
 
 
 def check_path(path_name):
     if not os.path.exists(path_name):
-        raise ValueError('not exist path:{}'.format(path_name))
+        raise ValueError("not exist path:{}".format(path_name))
 
 
 def get_and_split_dataset(dataset_dir, valid_cols=[]):
     # get path and check existence
-    attr_path = os.path.join(dataset_dir, 'Anno', 'list_attr_celeba.txt')
+    attr_path = os.path.join(dataset_dir, "Anno", "list_attr_celeba.txt")
     check_path(attr_path)
-    partition_path = os.path.join(dataset_dir, 'Eval',
-                                  'list_eval_partition.txt')
+    partition_path = os.path.join(dataset_dir, "Eval", "list_eval_partition.txt")
     check_path(partition_path)
-    img_dir = os.path.join(dataset_dir, 'Img', 'img_align_celeba')
+    img_dir = os.path.join(dataset_dir, "Img", "img_align_celeba")
     check_path(img_dir)
     # read partition info
-    part_df = pd.read_csv(partition_path, sep='\s+', skiprows=0, header=None)
-    part_df.columns = ['filename', 'partition']
-    part_df = part_df.set_index('filename')
+    part_df = pd.read_csv(partition_path, sep="\s+", skiprows=0, header=None)
+    part_df.columns = ["filename", "partition"]
+    part_df = part_df.set_index("filename")
     # part_df.head(5)
     # read attr info
-    attr_df = pd.read_csv(attr_path, sep='\s+', skiprows=1)
+    attr_df = pd.read_csv(attr_path, sep="\s+", skiprows=1)
     attr_df[attr_df == -1] = 0
     # attr_df.head()
     # merge partition and attribution data frame
     df = attr_df.merge(part_df, left_index=True, right_index=True)
     # split into train, val, test partition
-    train_df = df.loc[df['partition'] == 0].drop(['partition'], axis=1)
-    val_df = df.loc[df['partition'] == 1].drop(['partition'], axis=1)
-    test_df = df.loc[df['partition'] == 2].drop(['partition'], axis=1)
+    train_df = df.loc[df["partition"] == 0].drop(["partition"], axis=1)
+    val_df = df.loc[df["partition"] == 1].drop(["partition"], axis=1)
+    test_df = df.loc[df["partition"] == 2].drop(["partition"], axis=1)
     # select chosen attributes
-    if valid_cols is not None \
-            and isinstance(valid_cols, list) and len(valid_cols) > 0:
-        train_df, val_df, test_df = \
-            train_df[valid_cols], val_df[valid_cols], test_df[valid_cols]
+    if valid_cols is not None and isinstance(valid_cols, list) and len(valid_cols) > 0:
+        train_df, val_df, test_df = (
+            train_df[valid_cols],
+            val_df[valid_cols],
+            test_df[valid_cols],
+        )
     return img_dir, train_df, val_df, test_df
 
 
@@ -103,13 +110,9 @@ def center_crop(img, crop_size):
 
 
 class Dataset:
-
-    def __init__(self,
-                 img_dir,
-                 df,
-                 batch_size=32,
-                 target_shape=(128, 128, 3),
-                 shuffle=False):
+    def __init__(
+        self, img_dir, df, batch_size=32, target_shape=(128, 128, 3), shuffle=False
+    ):
         self.img_dir = img_dir
         self.img_names = df.index.values
         self.labels = df.values
@@ -153,7 +156,7 @@ class Dataset:
             if self.shuffle is True:
                 random.shuffle(all_idx)
             for i in range(num_batch):
-                #i = 0
+                # i = 0
                 # compute start and end index on all_idx
                 start_idx = i * self.batch_size
                 tmp_idx = (i + 1) * self.batch_size
@@ -183,7 +186,8 @@ class Dataset:
                 # one-hot encoding
                 oh_labels = np.zeros(
                     (labels.shape[0], labels.shape[1], self.get_cate_num()),
-                    dtype=np.float32)
+                    dtype=np.float32,
+                )
                 for i in range(oh_labels.shape[0]):
                     for j in range(oh_labels.shape[1]):
                         oh_labels[i, j, labels[i, j]] = 1
@@ -204,7 +208,7 @@ def create_dataset(dataset_dir, batch_size=32, target_shape=(128, 128, 3)):
 
 def test_dataset():
     # create dataset
-    dataset_dir = os.path.expanduser('~/Database/Dataset/CelebA-dataset')
+    dataset_dir = os.path.expanduser("~/Database/Dataset/CelebA-dataset")
     trainset, valset, testset = create_dataset(dataset_dir)
     print(trainset.get_batch_num())
     print(valset.get_batch_num())
@@ -222,7 +226,6 @@ def test_dataset():
 
 
 class VggNet:
-
     @staticmethod
     def build(height, width, depth, feat_dim, bn=False, dropout=0.25):
         model = Sequential()
@@ -233,84 +236,84 @@ class VggNet:
             input_shape = (depth, height, width)
             chan_dim = 1
         # block_1
-        model.add(Conv2D(64, (3, 3), padding='same', input_shape=input_shape))
-        model.add(Activation('relu'))
+        model.add(Conv2D(64, (3, 3), padding="same", input_shape=input_shape))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
-        model.add(Conv2D(64, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(64, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
         model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
         if dropout is not None and dropout > 0.0:
             model.add(Dropout(dropout))
         # block_2
-        model.add(Conv2D(128, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(128, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
-        model.add(Conv2D(128, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(128, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
         model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
         if dropout is not None and dropout > 0.0:
             model.add(Dropout(dropout))
         # block_3
-        model.add(Conv2D(256, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(256, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
-        model.add(Conv2D(256, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(256, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
-        model.add(Conv2D(256, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(256, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
-        model.add(Conv2D(256, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(256, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
         model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
         if dropout is not None and dropout > 0.0:
             model.add(Dropout(dropout))
         # block_4
-        model.add(Conv2D(512, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(512, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
-        model.add(Conv2D(512, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(512, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
-        model.add(Conv2D(512, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(512, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
-        model.add(Conv2D(512, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(512, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
         model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
         if dropout is not None and dropout > 0.0:
             model.add(Dropout(dropout))
         # block_5
-        model.add(Conv2D(512, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(512, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
-        model.add(Conv2D(512, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(512, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
-        model.add(Conv2D(512, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(512, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
-        model.add(Conv2D(512, (3, 3), padding='same'))
-        model.add(Activation('relu'))
+        model.add(Conv2D(512, (3, 3), padding="same"))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
         model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
@@ -319,14 +322,14 @@ class VggNet:
         # fully-connected layers
         model.add(Flatten())
         model.add(Dense(4096))
-        model.add(Activation('relu'))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
         if dropout is not None and dropout > 0.0:
             model.add(Dropout(dropout))
 
         model.add(Dense(4096))
-        model.add(Activation('relu'))
+        model.add(Activation("relu"))
         if bn is True:
             model.add(BatchNormalization(axis=chan_dim))
         if dropout is not None and dropout > 0.0:
@@ -338,59 +341,63 @@ class VggNet:
 
 def train(args):
     # create dataset
-    trainset, valset, _ = create_dataset(args.dataset_dir, args.batch_size,
-                                         TARGET_SHAPE)
+    trainset, valset, _ = create_dataset(
+        args.dataset_dir, args.batch_size, TARGET_SHAPE
+    )
     # dump attrs
-    with open(args.label_path, 'w') as wfid:
+    with open(args.label_path, "w") as wfid:
         wfid.write(json.dumps(trainset.get_attrs()))
     # create vggnet
     ishape = trainset.get_target_shape()
     num_attrs, num_cates = trainset.get_attr_num(), trainset.get_cate_num()
     feat_dim = num_attrs * num_cates
-    model = VggNet.build(ishape[0],
-                         ishape[1],
-                         ishape[2],
-                         feat_dim,
-                         bn=args.batch_normalize,
-                         dropout=args.dropout)
+    model = VggNet.build(
+        ishape[0],
+        ishape[1],
+        ishape[2],
+        feat_dim,
+        bn=args.batch_normalize,
+        dropout=args.dropout,
+    )
     # reshape to the same shape with labels
     if 1 != num_attrs:
         model.add(Reshape((num_attrs, num_cates)))
-    model.add(Activation('softmax'))
+    model.add(Activation("softmax"))
     # config parameters of solver
     opt = Adam(lr=args.init_lr)
-    loss = 'categorical_crossentropy'
+    loss = "categorical_crossentropy"
     model.compile(loss=loss, optimizer=opt, metrics=["accuracy"])
     model.summary()
     # create callback
     callbacks = [
-        ModelCheckpoint(args.model_path,
-                        monitor='val_loss',
-                        save_best_only=True,
-                        verbose=1),
+        ModelCheckpoint(
+            args.model_path, monitor="val_loss", save_best_only=True, verbose=1
+        ),
         # EarlyStopping(patience=50),
         # ReduceLROnPlateau(patience=10),
-        CSVLogger(args.trainlog_path)
+        CSVLogger(args.trainlog_path),
     ]
 
     # train model
     if args.goon_train and os.path.exists(args.model_path):
         model.load_weights(args.model_path)
-    H = model.fit_generator(trainset.generate(),
-                            steps_per_epoch=trainset.get_batch_num(),
-                            validation_data=valset.generate(),
-                            validation_steps=valset.get_batch_num(),
-                            epochs=args.epochs,
-                            verbose=1,
-                            callbacks=callbacks)
+    H = model.fit_generator(
+        trainset.generate(),
+        steps_per_epoch=trainset.get_batch_num(),
+        validation_data=valset.generate(),
+        validation_steps=valset.get_batch_num(),
+        epochs=args.epochs,
+        verbose=1,
+        callbacks=callbacks,
+    )
     # plot curve
     plt.style.use("ggplot")
     plt.figure()
     N = args.epochs
-    plt.plot(np.arange(0, N), H.history['loss'], label='train_loss')
-    plt.plot(np.arange(0, N), H.history['val_loss'], label='val_loss')
-    plt.plot(np.arange(0, N), H.history['accuracy'], label='train_acc')
-    plt.plot(np.arange(0, N), H.history['val_accuracy'], label='val_acc')
+    plt.plot(np.arange(0, N), H.history["loss"], label="train_loss")
+    plt.plot(np.arange(0, N), H.history["val_loss"], label="val_loss")
+    plt.plot(np.arange(0, N), H.history["accuracy"], label="train_acc")
+    plt.plot(np.arange(0, N), H.history["val_accuracy"], label="val_acc")
     plt.title("Training Loss and Accuracy")
     plt.xlabel("Epoch #")
     plt.ylabel("Loss/Accuracy")
@@ -400,15 +407,14 @@ def train(args):
 
 def evaluate(args):
     # create dataset
-    _, _, testset = create_dataset(args.dataset_dir, args.batch_size,
-                                   TARGET_SHAPE)
+    _, _, testset = create_dataset(args.dataset_dir, args.batch_size, TARGET_SHAPE)
     # load model
     model = load_model(args.model_path)
     # evaluate
-    ret = model.evaluate_generator(testset.generate(),
-                                   steps=testset.get_batch_num(),
-                                   verbose=1)
-    print('evaluate on testset: loss={}, acc={}'.format(ret[0], ret[1]))
+    ret = model.evaluate_generator(
+        testset.generate(), steps=testset.get_batch_num(), verbose=1
+    )
+    print("evaluate on testset: loss={}, acc={}".format(ret[0], ret[1]))
     # for images, labels in testset.generate(epoch_stop=True):
     #     preds = model.predict(images)
     #     print(np.argmax(preds, axis=-1))
@@ -417,75 +423,78 @@ def evaluate(args):
 
 
 # default dataset dir
-DATASET_HOME = os.path.expanduser('~/Database/Dataset')
-DATASET_PATH = os.path.join(DATASET_HOME, 'CelebA-dataset')
+DATASET_HOME = os.path.expanduser("~/Database/Dataset")
+DATASET_PATH = os.path.join(DATASET_HOME, "CelebA-dataset")
 # default model path
-MODEL_SAVE_PATH = os.path.join('output', 'model', 'vggnet_on_celeba.model')
+MODEL_SAVE_PATH = os.path.join("output", "model", "vggnet_on_celeba.model")
 # default path of label2idx map
-LABELBIN_SAVE = os.path.join('output', 'label', 'celeba_attrs.json')
+LABELBIN_SAVE = os.path.join("output", "label", "celeba_attrs.json")
 # default curve file path
-LOSS_PLOT_PATH = os.path.join('output', 'vgg_celeba_acc_loss.png')
-TRAIN_LOG_PATH = os.path.join('output', 'train_vgg_celeba.log.csv')
+LOSS_PLOT_PATH = os.path.join("output", "vgg_celeba_acc_loss.png")
+TRAIN_LOG_PATH = os.path.join("output", "train_vgg_celeba.log.csv")
 # default input image shape
 TARGET_SHAPE = (128, 128, 3)
 
 
 def parse_args():
-    """ Parse arguments from command line
-    """
+    """Parse arguments from command line"""
     ap = argparse.ArgumentParser()
-    ap.add_argument('-d',
-                    '--dataset-dir',
-                    type=str,
-                    default=DATASET_PATH,
-                    help="path to input dataset")
-    ap.add_argument('-m',
-                    '--model-path',
-                    type=str,
-                    default=MODEL_SAVE_PATH,
-                    help="path to output model")
-    ap.add_argument('-l',
-                    '--label_path',
-                    type=str,
-                    default=LABELBIN_SAVE,
-                    help="path to output label binarizer")
-    ap.add_argument('-p',
-                    '--plot-path',
-                    type=str,
-                    default=LOSS_PLOT_PATH,
-                    help="path to output accuracy/loss plot")
-    ap.add_argument('--trainlog-path',
-                    type=str,
-                    default=TRAIN_LOG_PATH,
-                    help='path to training log')
-    ap.add_argument('-b',
-                    '--batch-size',
-                    type=int,
-                    default=64,
-                    help='batch size')
-    ap.add_argument('-e',
-                    '--epochs',
-                    type=int,
-                    default=20,
-                    help='number of epochs')
-    ap.add_argument('-i', '--init-lr', type=float, default=1e-5)
-    ap.add_argument('--phase',
-                    type=str,
-                    default='train',
-                    choices=['train', 'evaluate'],
-                    help='specify operations, train or evaluate')
-    ap.add_argument('--goon-train',
-                    type=bool,
-                    default=False,
-                    help='load old model and go on training')
-    ap.add_argument('--batch-normalize',
-                    type=bool,
-                    default=True,
-                    help='add batch normalization layers after activations')
-    ap.add_argument('--dropout',
-                    type=float,
-                    default=0.25,
-                    help='dropout probability on training')
+    ap.add_argument(
+        "-d",
+        "--dataset-dir",
+        type=str,
+        default=DATASET_PATH,
+        help="path to input dataset",
+    )
+    ap.add_argument(
+        "-m",
+        "--model-path",
+        type=str,
+        default=MODEL_SAVE_PATH,
+        help="path to output model",
+    )
+    ap.add_argument(
+        "-l",
+        "--label_path",
+        type=str,
+        default=LABELBIN_SAVE,
+        help="path to output label binarizer",
+    )
+    ap.add_argument(
+        "-p",
+        "--plot-path",
+        type=str,
+        default=LOSS_PLOT_PATH,
+        help="path to output accuracy/loss plot",
+    )
+    ap.add_argument(
+        "--trainlog-path", type=str, default=TRAIN_LOG_PATH, help="path to training log"
+    )
+    ap.add_argument("-b", "--batch-size", type=int, default=64, help="batch size")
+    ap.add_argument("-e", "--epochs", type=int, default=20, help="number of epochs")
+    ap.add_argument("-i", "--init-lr", type=float, default=1e-5)
+    ap.add_argument(
+        "--phase",
+        type=str,
+        default="train",
+        choices=["train", "evaluate"],
+        help="specify operations, train or evaluate",
+    )
+    ap.add_argument(
+        "--goon-train",
+        type=bool,
+        default=False,
+        help="load old model and go on training",
+    )
+    ap.add_argument(
+        "--batch-normalize",
+        type=bool,
+        default=True,
+        help="add batch normalization layers after activations",
+    )
+    ap.add_argument(
+        "--dropout", type=float, default=0.25, help="dropout probability on training"
+    )
     args = ap.parse_args()
     # check args
     check_dir(args.dataset_dir, report_error=True)
@@ -499,22 +508,22 @@ def parse_args():
 def test_model_structure():
     model = VggNet.build(128, 128, 3, 80, bn=True, dropout=0.25)
     model.add(Reshape((40, 2)))
-    model.add(Activation('softmax'))
+    model.add(Activation("softmax"))
     model.summary()
-    plot_model(model, 'output/vggnet.png', show_shapes=True)
+    plot_model(model, "output/vggnet.png", show_shapes=True)
 
 
 def main():
     args = parse_args()
-    if 'train' == args.phase:
+    if "train" == args.phase:
         train(args)
-    elif 'evaluate' == args.phase:
+    elif "evaluate" == args.phase:
         evaluate(args)
     else:
-        raise ValueError('not allowed phase[{}]'.format(args.phase))
+        raise ValueError("not allowed phase[{}]".format(args.phase))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # test_dataset()
     # test_model_structure()
     main()

@@ -1,4 +1,4 @@
-#encoding: utf-8
+# encoding: utf-8
 
 import os
 import io
@@ -111,14 +111,16 @@ class COCODataset(Dataset):
         "toothbrush",
     )
 
-    def __init__(self,
-                 data_dir=None,
-                 json_file="instances_train2017.json",
-                 name="train2017",
-                 img_size=(416, 416),
-                 preproc=None,
-                 cache=False,
-                 dataset_name="MSCOCO-dataset"):
+    def __init__(
+        self,
+        data_dir=None,
+        json_file="instances_train2017.json",
+        name="train2017",
+        img_size=(416, 416),
+        preproc=None,
+        cache=False,
+        dataset_name="MSCOCO-dataset",
+    ):
         """
         COCO dataset initialization. Annotation data are read into memory by COCO API.
         Args:
@@ -131,14 +133,13 @@ class COCODataset(Dataset):
         """
         super().__init__(img_size)
         if data_dir is None:
-            data_dir = os.path.join('dataset', dataset_name)
+            data_dir = os.path.join("dataset", dataset_name)
         else:
             data_dir = os.path.join(data_dir, dataset_name)
         self.data_dir = data_dir
         self.json_file = json_file
 
-        self.coco = COCO(
-            os.path.join(self.data_dir, "annotations", self.json_file))
+        self.coco = COCO(os.path.join(self.data_dir, "annotations", self.json_file))
         self.ids = self.coco.getImgIds()
         self.class_ids = sorted(self.coco.getCatIds())
         cats = self.coco.loadCats(self.coco.getCatIds())
@@ -191,14 +192,15 @@ class COCODataset(Dataset):
             )
             pbar = tqdm(enumerate(loaded_images), total=len(self.annotations))
             for k, out in pbar:
-                self.imgs[k][:out.shape[0], :out.shape[1], :] = out.copy()
+                self.imgs[k][: out.shape[0], : out.shape[1], :] = out.copy()
             self.imgs.flush()
             pbar.close()
         else:
             logger.warning(
                 "You are using cached imgs! Make sure your dataset is not changed!!\n"
                 "Everytime the self.input_size is changed in your exp file, you need to delete\n"
-                "the cached data and re-generate them.\n")
+                "the cached data and re-generate them.\n"
+            )
 
         logger.info("Loading cached imgs...")
         self.imgs = np.memmap(
@@ -239,8 +241,11 @@ class COCODataset(Dataset):
         img_info = (height, width)
         resized_info = (int(height * r), int(width * r))
 
-        file_name = (im_ann["file_name"] if "file_name" in im_ann else
-                     "{:012}".format(id_) + ".jpg")
+        file_name = (
+            im_ann["file_name"]
+            if "file_name" in im_ann
+            else "{:012}".format(id_) + ".jpg"
+        )
 
         return (res, img_info, resized_info, file_name)
 
@@ -249,8 +254,7 @@ class COCODataset(Dataset):
 
     def load_resized_img(self, index):
         img = self.load_image(index)
-        r = min(self.img_size[0] / img.shape[0],
-                self.img_size[1] / img.shape[1])
+        r = min(self.img_size[0] / img.shape[0], self.img_size[1] / img.shape[1])
         resized_img = cv2.resize(
             img,
             (int(img.shape[1] * r), int(img.shape[0] * r)),
@@ -274,7 +278,7 @@ class COCODataset(Dataset):
         res, img_info, resized_info, _ = self.annotations[index]
         if self.imgs is not None:
             pad_img = self.imgs[index]
-            img = pad_img[:resized_info[0], :resized_info[1], :].copy()
+            img = pad_img[: resized_info[0], : resized_info[1], :].copy()
         else:
             img = self.load_resized_img(index)
 
@@ -314,11 +318,9 @@ def time_synchronized():
     return time.time()
 
 
-def postprocess(prediction,
-                num_classes,
-                conf_thre=0.7,
-                nms_thre=0.45,
-                class_agnostic=False):
+def postprocess(
+    prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agnostic=False
+):
     box_corner = prediction.new(prediction.shape)
     box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 2] / 2
     box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 3] / 2
@@ -333,15 +335,13 @@ def postprocess(prediction,
         if not image_pred.size(0):
             continue
         # Get score and class with highest confidence
-        class_conf, class_pred = torch.max(image_pred[:, 5:5 + num_classes],
-                                           1,
-                                           keepdim=True)
+        class_conf, class_pred = torch.max(
+            image_pred[:, 5 : 5 + num_classes], 1, keepdim=True
+        )
 
-        conf_mask = (image_pred[:, 4] * class_conf.squeeze() >=
-                     conf_thre).squeeze()
+        conf_mask = (image_pred[:, 4] * class_conf.squeeze() >= conf_thre).squeeze()
         # Detections ordered as (x1, y1, x2, y2, obj_conf, class_conf, class_pred)
-        detections = torch.cat(
-            (image_pred[:, :5], class_conf, class_pred.float()), 1)
+        detections = torch.cat((image_pred[:, :5], class_conf, class_pred.float()), 1)
         detections = detections[conf_mask]
         if not detections.size(0):
             continue
@@ -381,13 +381,9 @@ class COCOEvaluator:
     and evaluated by COCO API.
     """
 
-    def __init__(self,
-                 dataloader,
-                 img_size,
-                 confthre,
-                 nmsthre,
-                 num_classes,
-                 testdev=False):
+    def __init__(
+        self, dataloader, img_size, confthre, nmsthre, num_classes, testdev=False
+    ):
         """
         Args:
             dataloader (Dataloader): evaluate dataloader.
@@ -442,8 +438,9 @@ class COCOEvaluator:
         nms_time = 0
         n_samples = max(len(self.dataloader) - 1, 1)
 
-        for cur_iter, (imgs, _, info_imgs,
-                       ids) in enumerate(progress_bar(self.dataloader)):
+        for cur_iter, (imgs, _, info_imgs, ids) in enumerate(
+            progress_bar(self.dataloader)
+        ):
             with torch.no_grad():
                 imgs = imgs.type(tensor_type)
 
@@ -460,27 +457,26 @@ class COCOEvaluator:
                     infer_end = time_synchronized()
                     inference_time += infer_end - start
 
-                outputs = postprocess(outputs, self.num_classes, self.confthre,
-                                      self.nmsthre)
+                outputs = postprocess(
+                    outputs, self.num_classes, self.confthre, self.nmsthre
+                )
                 if is_time_record:
                     nms_end = time_synchronized()
                     nms_time += nms_end - infer_end
 
-            data_list.extend(
-                self.convert_to_coco_format(outputs, info_imgs, ids))
-        statistics = torch.FloatTensor(
-            [inference_time, nms_time, n_samples])
+            data_list.extend(self.convert_to_coco_format(outputs, info_imgs, ids))
+        statistics = torch.FloatTensor([inference_time, nms_time, n_samples])
         if torch.cuda.is_available():
-            statistics = torch.cuda.FloatTensor(
-                [inference_time, nms_time, n_samples])
+            statistics = torch.cuda.FloatTensor([inference_time, nms_time, n_samples])
 
         eval_results = self.evaluate_prediction(data_list, statistics)
         return eval_results
 
     def convert_to_coco_format(self, outputs, info_imgs, ids):
         data_list = []
-        for (output, img_h, img_w, img_id) in zip(outputs, info_imgs[0],
-                                                  info_imgs[1], ids):
+        for (output, img_h, img_w, img_id) in zip(
+            outputs, info_imgs[0], info_imgs[1], ids
+        ):
             if output is None:
                 continue
             output = output.cpu()
@@ -488,8 +484,9 @@ class COCOEvaluator:
             bboxes = output[:, 0:4]
 
             # preprocessing: resize
-            scale = min(self.img_size[0] / float(img_h),
-                        self.img_size[1] / float(img_w))
+            scale = min(
+                self.img_size[0] / float(img_h), self.img_size[1] / float(img_w)
+            )
             bboxes /= scale
             bboxes = xyxy2xywh(bboxes)
 
@@ -517,16 +514,18 @@ class COCOEvaluator:
         nms_time = statistics[1].item()
         n_samples = statistics[2].item()
 
-        a_infer_time = 1000 * inference_time / (n_samples *
-                                                self.dataloader.batch_size)
+        a_infer_time = 1000 * inference_time / (n_samples * self.dataloader.batch_size)
         a_nms_time = 1000 * nms_time / (n_samples * self.dataloader.batch_size)
 
-        time_info = ", ".join([
-            "Average {} time: {:.2f} ms".format(k, v) for k, v in zip(
-                ["forward", "NMS", "inference"],
-                [a_infer_time, a_nms_time, (a_infer_time + a_nms_time)],
-            )
-        ])
+        time_info = ", ".join(
+            [
+                "Average {} time: {:.2f} ms".format(k, v)
+                for k, v in zip(
+                    ["forward", "NMS", "inference"],
+                    [a_infer_time, a_nms_time, (a_infer_time + a_nms_time)],
+                )
+            ]
+        )
 
         info = time_info + "\n"
 

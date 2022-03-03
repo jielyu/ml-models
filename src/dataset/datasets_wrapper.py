@@ -1,4 +1,4 @@
-#encoding: utf-8
+# encoding: utf-8
 
 from functools import wraps
 import torch
@@ -8,7 +8,7 @@ from dataset.samplers import YoloBatchSampler
 
 
 class Dataset(torchDataset):
-    """ This class is a subclass of the base :class:`torch.utils.data.Dataset`,
+    """This class is a subclass of the base :class:`torch.utils.data.Dataset`,
     that enables on the fly resizing of the ``input_dim``.
 
     Args:
@@ -102,12 +102,10 @@ class DataLoader(torchDataLoader):
         if batch_sampler is None:
             if sampler is None:
                 if shuffle:
-                    sampler = torch.utils.data.sampler.RandomSampler(
-                        self.dataset)
+                    sampler = torch.utils.data.sampler.RandomSampler(self.dataset)
                     # sampler = torch.utils.data.DistributedSampler(self.dataset)
                 else:
-                    sampler = torch.utils.data.sampler.SequentialSampler(
-                        self.dataset)
+                    sampler = torch.utils.data.sampler.SequentialSampler(self.dataset)
             batch_sampler = YoloBatchSampler(
                 sampler,
                 self.batch_size,

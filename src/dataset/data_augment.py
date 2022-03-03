@@ -25,8 +25,7 @@ def xyxy2cxcywh(bboxes):
 
 
 def augment_hsv(img, hgain=5, sgain=30, vgain=30):
-    hsv_augs = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain
-                                              ]  # random gains
+    hsv_augs = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain]  # random gains
     hsv_augs *= np.random.randint(0, 2, 3)  # random selection of h, s, v
     hsv_augs = hsv_augs.astype(np.int16)
     img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.int16)
@@ -35,8 +34,9 @@ def augment_hsv(img, hgain=5, sgain=30, vgain=30):
     img_hsv[..., 1] = np.clip(img_hsv[..., 1] + hsv_augs[1], 0, 255)
     img_hsv[..., 2] = np.clip(img_hsv[..., 2] + hsv_augs[2], 0, 255)
 
-    cv2.cvtColor(img_hsv.astype(img.dtype), cv2.COLOR_HSV2BGR,
-                 dst=img)  # no return needed
+    cv2.cvtColor(
+        img_hsv.astype(img.dtype), cv2.COLOR_HSV2BGR, dst=img
+    )  # no return needed
 
 
 def get_aug_params(value, center=0):
@@ -47,7 +47,10 @@ def get_aug_params(value, center=0):
     else:
         raise ValueError(
             "Affine params should be either a sequence containing two values\
-                          or single float values. Got {}".format(value))
+                          or single float values. Got {}".format(
+                value
+            )
+        )
 
 
 def get_affine_matrix(
@@ -77,10 +80,8 @@ def get_affine_matrix(
     M[1] = R[1] + shear_x * R[0]
 
     # Translation
-    translation_x = get_aug_params(
-        translate) * twidth  # x translation (pixels)
-    translation_y = get_aug_params(
-        translate) * theight  # y translation (pixels)
+    translation_x = get_aug_params(translate) * twidth  # x translation (pixels)
+    translation_y = get_aug_params(translate) * theight  # y translation (pixels)
 
     M[0, 2] = translation_x
     M[1, 2] = translation_y
@@ -95,16 +96,21 @@ def apply_affine_to_bboxes(targets, target_size, M, scale):
     twidth, theight = target_size
     corner_points = np.ones((4 * num_gts, 3))
     corner_points[:, :2] = targets[:, [0, 1, 2, 3, 0, 3, 2, 1]].reshape(
-        4 * num_gts, 2)  # x1y1, x2y2, x1y2, x2y1
+        4 * num_gts, 2
+    )  # x1y1, x2y2, x1y2, x2y1
     corner_points = corner_points @ M.T  # apply affine transform
     corner_points = corner_points.reshape(num_gts, 8)
 
     # create new boxes
     corner_xs = corner_points[:, 0::2]
     corner_ys = corner_points[:, 1::2]
-    new_bboxes = (np.concatenate(
-        (corner_xs.min(1), corner_ys.min(1), corner_xs.max(1),
-         corner_ys.max(1))).reshape(4, num_gts).T)
+    new_bboxes = (
+        np.concatenate(
+            (corner_xs.min(1), corner_ys.min(1), corner_xs.max(1), corner_ys.max(1))
+        )
+        .reshape(4, num_gts)
+        .T
+    )
 
     # clip boxes
     new_bboxes[:, 0::2] = new_bboxes[:, 0::2].clip(0, twidth)
@@ -116,21 +122,17 @@ def apply_affine_to_bboxes(targets, target_size, M, scale):
 
 
 def random_affine(
-        img,
-        targets=(),
-        target_size=(640, 640),
-        degrees=10,
-        translate=0.1,
-        scales=0.1,
-        shear=10,
+    img,
+    targets=(),
+    target_size=(640, 640),
+    degrees=10,
+    translate=0.1,
+    scales=0.1,
+    shear=10,
 ):
-    M, scale = get_affine_matrix(target_size, degrees, translate, scales,
-                                 shear)
+    M, scale = get_affine_matrix(target_size, degrees, translate, scales, shear)
 
-    img = cv2.warpAffine(img,
-                         M,
-                         dsize=target_size,
-                         borderValue=(114, 114, 114))
+    img = cv2.warpAffine(img, M, dsize=target_size, borderValue=(114, 114, 114))
 
     # Transform label coordinates
     if len(targets) > 0:
@@ -149,8 +151,7 @@ def _mirror(image, boxes, prob=0.5):
 
 def preproc(img, input_size, swap=(2, 0, 1)):
     if len(img.shape) == 3:
-        padded_img = np.ones(
-            (input_size[0], input_size[1], 3), dtype=np.uint8) * 114
+        padded_img = np.ones((input_size[0], input_size[1], 3), dtype=np.uint8) * 114
     else:
         padded_img = np.ones(input_size, dtype=np.uint8) * 114
 
@@ -160,7 +161,7 @@ def preproc(img, input_size, swap=(2, 0, 1)):
         (int(img.shape[1] * r), int(img.shape[0] * r)),
         interpolation=cv2.INTER_LINEAR,
     ).astype(np.uint8)
-    padded_img[:int(img.shape[0] * r), :int(img.shape[1] * r)] = resized_img
+    padded_img[: int(img.shape[0] * r), : int(img.shape[1] * r)] = resized_img
 
     padded_img = padded_img.transpose(swap)
     padded_img = np.ascontiguousarray(padded_img, dtype=np.float32)
@@ -168,7 +169,6 @@ def preproc(img, input_size, swap=(2, 0, 1)):
 
 
 class TrainTransform:
-
     def __init__(self, max_labels=50, flip_prob=0.5, hsv_prob=1.0):
         self.max_labels = max_labels
         self.flip_prob = flip_prob
@@ -213,8 +213,9 @@ class TrainTransform:
 
         targets_t = np.hstack((labels_t, boxes_t))
         padded_labels = np.zeros((self.max_labels, 5))
-        padded_labels[range(
-            len(targets_t))[:self.max_labels]] = targets_t[:self.max_labels]
+        padded_labels[range(len(targets_t))[: self.max_labels]] = targets_t[
+            : self.max_labels
+        ]
         padded_labels = np.ascontiguousarray(padded_labels, dtype=np.float32)
         return image_t, padded_labels
 
