@@ -5,6 +5,12 @@
 
 [源码](src/svm.py)
 
+在colab上训练的指令：
+
+```shell
+python src/yolox.py --phase train --colab 1 --gpu 1 --batch_size 8
+```
+
 ## YoloX
 
 [源码][src/yolox.py]
