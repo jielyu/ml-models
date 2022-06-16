@@ -4,7 +4,7 @@ from functools import wraps
 import torch
 from torch.utils.data.dataset import Dataset as torchDataset
 from torch.utils.data.dataloader import DataLoader as torchDataLoader
-from dataset.samplers import YoloBatchSampler
+from yolox_utils.samplers import YoloBatchSampler
 
 
 class Dataset(torchDataset):

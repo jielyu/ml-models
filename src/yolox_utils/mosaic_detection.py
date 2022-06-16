@@ -9,8 +9,8 @@ import numpy as np
 
 # from yolox.utils import adjust_box_anns, get_local_rank
 
-from dataset.data_augment import random_affine
-from dataset.datasets_wrapper import Dataset
+from yolox_utils.data_augment import random_affine
+from yolox_utils.datasets_wrapper import Dataset
 
 
 def adjust_box_anns(bbox, scale_ratio, padw, padh, w_max, h_max):

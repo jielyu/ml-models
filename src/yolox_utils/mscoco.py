@@ -20,7 +20,7 @@ from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 
-from dataset.datasets_wrapper import Dataset
+from yolox_utils.datasets_wrapper import Dataset
 
 
 class COCODataset(Dataset):

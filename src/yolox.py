@@ -1332,15 +1332,15 @@ class YOLOX(nn.Module):
         return outputs
 
 
-from dataset.mscoco import COCODataset
-from dataset.mscoco import COCOEvaluator
-from dataset.data_augment import TrainTransform
-from dataset.data_augment import ValTransform
-from dataset.datasets_wrapper import YoloBatchSampler
-from dataset.datasets_wrapper import DataLoader
-from dataset.samplers import InfiniteSampler
-from dataset.mosaic_detection import MosaicDetection
-from learning_config.lr_scheduler import LRScheduler
+from yolox_utils.mscoco import COCODataset
+from yolox_utils.mscoco import COCOEvaluator
+from yolox_utils.data_augment import TrainTransform
+from yolox_utils.data_augment import ValTransform
+from yolox_utils.datasets_wrapper import YoloBatchSampler
+from yolox_utils.datasets_wrapper import DataLoader
+from yolox_utils.samplers import InfiniteSampler
+from yolox_utils.mosaic_detection import MosaicDetection
+from yolox_utils.lr_scheduler import LRScheduler
 
 import time
 
@@ -1914,7 +1914,7 @@ def parse_args():
     args.add_argument("--img-path", type=str, default=None)
     args.add_argument("--gpu", type=str2bool, default=False)
     args.add_argument("--colab", type=str2bool, default=False)
-    args.add_argument("--data_dir", type=str, default="/Users/jielyu/Database/Dataset")
+    args.add_argument("--data_dir", type=str, default="./dataset")
     args.add_argument("--output_dir", type=str, default="./YOLOX_outputs")
     args.add_argument("--batch_size", type=int, default=4)
     args.add_argument("--num_data_worker", type=int, default=4)
