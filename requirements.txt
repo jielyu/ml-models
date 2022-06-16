@@ -4,3 +4,4 @@ numpy
 keras
 matplotlib
 imutils
+dlib

@@ -1,4 +1,19 @@
-# Introduction of Model Experiments 模型实验说明
+# 模型实验说明
+
+
+## SVM (pytorch)
+
+[源码](src/svm.py)
+
+## YoloX
+
+[源码][src/yolox.py]
+
+
+## VGG on Celeba
+
+[源码](src/vgg_on_celeba.py)
+
 
 ## 12306verifycode
 
@@ -50,15 +65,6 @@ train_acc=99.0%, val_acc=99.1%, test_acc=95%
 
 暂时尚未加入"数据增强"的操作
 
-## VGG on Celeba
 
-[源码](src/vgg_on_celeba.py)
-
-
-## YoloX
-
-**未完成**
-
-[源码][src/yolox.py]
 
 
