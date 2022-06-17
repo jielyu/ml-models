@@ -6,15 +6,18 @@ import cv2
 import dlib
 import matplotlib.pyplot as plt
 
+from common_utils.check_utils import check_model_path
+
 
 class FaceDetector:
     def __init__(self):
         self.detector = dlib.get_frontal_face_detector()
 
-    def detect(self, image):
+    def __call__(self, image):
         """检测人脸"""
-        img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        return self.detector(img, 1)
+        if image.ndim == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        return self.detector(image, 1)
 
     def plot_rect(self, rect):
         x, y, w, h = rect.left(), rect.top(), rect.width(), rect.height()
@@ -22,21 +25,25 @@ class FaceDetector:
             plt.Rectangle((x, y), w, h, fill=False, edgecolor="red", linewidth=2)
         )
 
+    def plot_image_with_rect(self, image, rects):
+        plt.clf()
+        plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        for rect in rects:
+            self.plot_rect(rect)
+        plt.show()
+
     def demo(self, img_path):
         """展示示例"""
         image = self.load_image(img_path)
         start_time = time.time()
-        rects = self.detect(image)
+        rects = self(image)
         end_time = time.time()
         print(
             "Number of faces detected: {}, cost time(s): {:.4f}".format(
                 len(rects), end_time - start_time
             )
         )
-        plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-        for rect in rects:
-            self.plot_rect(rect)
-        plt.show()
+        self.plot_image_with_rect(image, rects)
 
     def load_image(self, img_path):
         """载入图像"""
@@ -50,30 +57,29 @@ class FaceDetector:
 
 class CnnFaceDetector(FaceDetector):
     def __init__(self):
-        self.detector = dlib.cnn_face_detection_model_v1(
-            "models/face_recognition_models/mmod_human_face_detector.dat"
-        )
+        self.model_path = "models/face_recognition_models/mmod_human_face_detector.dat"
+        check_model_path(self.model_path)
+        self.detector = dlib.cnn_face_detection_model_v1(self.model_path)
 
-    def detect(self, image):
+    def __call__(self, image):
         """检测人脸"""
-        img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        return self.detector(img, 1)
+        if image.ndim == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        mmod_rects = self.detector(image, 1)
+        return [mm_rect.rect for mm_rect in mmod_rects]
 
     def demo(self, img_path):
         """展示示例"""
         image = self.load_image(img_path)
         start_time = time.time()
-        rects = self.detect(image)
+        rects = self(image)
         end_time = time.time()
         print(
             "Number of faces detected: {}, cost time(s): {:.4f}".format(
                 len(rects), end_time - start_time
             )
         )
-        plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-        for mmod_rect in rects:
-            self.plot_rect(mmod_rect.rect)
-        plt.show()
+        self.plot_image_with_rect(image, rects)
 
 
 def main():

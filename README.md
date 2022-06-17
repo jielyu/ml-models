@@ -19,6 +19,16 @@
 
 ## 模型介绍
 
+### 5. dlib Face Detection
+
+[模型代码](src/dlib_face_detection.py)
+
+封装和展示dlib中人脸检测器的效果
+
+```shell
+python src/dlib_face_detection.py
+```
+
 ### 4. SVM (pytorch)
 
 [模型代码](src/svm.py)
