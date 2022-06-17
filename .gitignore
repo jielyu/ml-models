@@ -3,6 +3,7 @@ output/
 *.log
 *output*/
 models/
+downloads/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
