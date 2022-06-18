@@ -2,6 +2,14 @@
 
 分享机器学习实验的代码，为相关方向的人员提供学习资源
 
+## 环境需求
+
+可通过 `requirements.txt` 文件安装所需第三方模块
+
+```shell
+pip3 install -r requirements.txt
+```
+
 ## 数据依赖
 
 以下依赖也可以使用软连接满足。
@@ -70,9 +78,34 @@ python src/dlib_face_detection.py
 主要是针对官方代码中网络结构与损失严重耦合造成部署麻烦的问题，
 将网络结构与训练技巧分开。
 
+#### colab上训练的指令
+
+```shell
+python src/yolox.py --phase train --colab 1 --gpu 1 --batch_size 8
+```
+
 ### 2. small VggNet
 
 [模型代码](src/smallervgg_on_12306verifycode.py)
+
+github上已经有一个12306验证码识别的[repo](https://github.com/wudinaonao/12306CaptchaCrack)，但是该程序内存的占用实在是有些浪费，以至于在我的小内存机器上无法正常运行，所以对数据集读取进行了一些优化。
+
+#### 训练
+
+```shell
+python3 -m keras_exp.train_smallervgg_on_12306verifycode --dataset-dir=path/to/trainval/directory
+```
+
+#### 评估
+
+```shell
+python3 -m keras_exp.train_smallervgg_on_12306verifycode --phase=evaluate --dataset-dir=path/to/test/directory
+```
+
+验证集占比20%， batch_size默认设置为128，训练25个epoch可以达到的精度如下：
+train_acc=99.0%, val_acc=99.1%, test_acc=95%
+
+#### 指标
 
 使用Small VggNet 对12306的验证码进行识别
 
