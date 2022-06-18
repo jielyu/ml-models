@@ -65,14 +65,15 @@ class FaceAlignment:
             # 可视化
             print(landmarks.parts())
             for landmark in landmarks.parts():
-                plt.plot(landmark.x, landmark.y, "ro")
+                plt.plot(landmark.x, landmark.y, "ro", markersize=1)
         print("Average cost time(s): {:.4f}".format(time_stat / len(face_rects)))
+        plt.savefig("output/dlib_face_alignment.png", bbox_inches="tight", dpi=300)
         plt.show()
 
 
 def main():
     img_path = "data/face-samples/two_people.jpeg"
-    face_alignment = FaceAlignment(num_landmarks=5)
+    face_alignment = FaceAlignment(num_landmarks=68)
     face_alignment.demo(img_path)
 
 

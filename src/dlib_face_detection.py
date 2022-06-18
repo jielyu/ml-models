@@ -30,6 +30,7 @@ class FaceDetector:
         plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         for rect in rects:
             self.plot_rect(rect)
+        plt.savefig("output/dlib_face_detection.png", bbox_inches="tight", dpi=300)
         plt.show()
 
     def demo(self, img_path):
