@@ -129,6 +129,8 @@ class FaceRecognition:
                     ax1.plot(xy1[0], xy1[1], "ro")
                     ax2.plot(xy2[0], xy2[1], "ro")
         plt.savefig("output/dlib_face_recognision.png", bbox_inches="tight", dpi=300)
+        # ax1.axis("off")
+        # ax2.axis("off")
         plt.show()
 
 

@@ -1,5 +1,6 @@
 # encoding: utf-8
 
+import argparse
 import os
 import time
 import cv2
@@ -83,11 +84,26 @@ class CnnFaceDetector(FaceDetector):
         self.plot_image_with_rect(image, rects)
 
 
+def str2bool(v):
+    """用于命令行解析bool类型的参数"""
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
 def main():
     img_path = "data/face-samples/two_people.jpeg"
+    args = argparse.ArgumentParser()
+    args.add_argument("--cnn", type=str2bool, default=False)
+    args = args.parse_args()
 
-    FaceDetector().demo(img_path)
-    CnnFaceDetector().demo(img_path)
+    if args.cnn is False:
+        FaceDetector().demo(img_path)
+    else:
+        CnnFaceDetector().demo(img_path)
 
 
 if __name__ == "__main__":

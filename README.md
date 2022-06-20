@@ -119,6 +119,8 @@ train_acc=99.0%, val_acc=99.1%, test_acc=95%
 [模型代码](src/vgg_on_celeba.py)
 [CelebA-dataset](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html)
 
+#### 指标
+
 使用VggNet在CelebA数据集上测试分类效果
 
 |序号 ID|实验名 Experiment Name |精度 Acc|备注 Mark|
