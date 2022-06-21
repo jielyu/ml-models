@@ -1,5 +1,9 @@
 # encoding: utf-8
 
+"""
+参考代码： https://github.com/xuebinqin/BASNet
+"""
+
 ## code from: https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
 import time
 from PIL import Image
@@ -7,10 +11,7 @@ import cv2
 from matplotlib import pyplot as plt
 import numpy as np
 import torch.nn as nn
-import math
-import torch.utils.model_zoo as model_zoo
 import torch
-import torchvision
 from torchvision import models
 from torchvision import transforms
 import torch.nn.functional as F
@@ -20,11 +21,6 @@ from common_utils.check_utils import check_model_path
 
 # __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
 #            'resnet152', 'ResNet34P','ResNet50S','ResNet50P','ResNet101P']
-#
-# resnet18_dir = '/local/sda4/yqian3/RoadNets/resnet_model/resnet18-5c106cde.pth'
-# resnet34_dir = '/local/sda4/yqian3/RoadNets/resnet_model/resnet34-333f7ec4.pth'
-# resnet50_dir = '/local/sda4/yqian3/RoadNets/resnet_model/resnet50-19c8e357.pth'
-# resnet101_dir = '/local/sda4/yqian3/RoadNets/resnet_model/resnet101-5d3b4d8f.pth'
 #
 # model_urls = {
 #     'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',

@@ -6,6 +6,7 @@ import requests
 import shutil
 import zipfile
 import gdown
+import urllib
 
 
 def __process_output_path__(output_path, zip_file):
@@ -44,6 +45,18 @@ def download_data_file(url, output_path, zip_file=False, overwrite=False):
     return output
 
 
+def download_text_file(url, output_path, overwrite=False):
+    output_folder, output_filename, output_exists = __process_output_path__(
+        output_path, False
+    )
+    if not output_exists or overwrite:
+        Path(output_folder).mkdir(parents=True, exist_ok=True)
+        filedata = urllib.request.urlopen(url)
+        with open(output_filename, "wb") as f:
+            f.write(filedata.read())
+    return output_filename
+
+
 def download_from_gdrive(gdrive_fileid, output_path, zip_file=False, overwrite=False):
     output_folder, output_filename, output_exists = __process_output_path__(
         output_path, zip_file
@@ -65,24 +78,40 @@ def test_download_data_file():
     print(p)
 
 
-def test_download_from_gdrive():
+def test_download_basnet_model():
     gdrive_field = "1s52ek_4YTDRt_EOkx1FS53u-vJa0c4nu"
     output_path = "basnet/basnet.pth"
     p = download_from_gdrive(gdrive_field, output_path, zip_file=False)
     print(p)
 
 
-def test_download_from_gdrive2():
+def test_download_starnight_picture():
     gdrive_field = "1LLV7lyuCPOCDa5c7CkWjSfeckXBou1W7"
     output_path = "ml4a_basnet/starnight.jpg"
     p = download_from_gdrive(gdrive_field, output_path, zip_file=False)
     print(p)
 
 
+def test_download_cartoonization_model():
+    model_subfolder = "ml4a_cartoonization/White-box-Cartoonization/"
+
+    download_data_file(
+        "https://raw.githubusercontent.com/SystemErrorWang/White-box-Cartoonization/master/test_code/saved_models/model-33999.data-00000-of-00001",
+        os.path.join(model_subfolder, "model-33999.data-00000-of-00001"),
+    )
+    download_data_file(
+        "https://raw.githubusercontent.com/SystemErrorWang/White-box-Cartoonization/master/test_code/saved_models/model-33999.index",
+        os.path.join(model_subfolder, "model-33999.index"),
+    )
+    download_text_file(
+        "https://raw.githubusercontent.com/SystemErrorWang/White-box-Cartoonization/master/test_code/saved_models/checkpoint",
+        os.path.join(model_subfolder, "checkpoint"),
+    )
+
+
 def main():
     # test_download_data_file()
-    # test_download_from_gdrive()
-    test_download_from_gdrive2()
+    test_download_cartoonization_model()
 
 
 if __name__ == "__main__":

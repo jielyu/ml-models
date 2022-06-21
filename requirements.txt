@@ -7,3 +7,5 @@ imutils
 dlib
 gdown
 skimage
+tensorflow
+tf_slim
