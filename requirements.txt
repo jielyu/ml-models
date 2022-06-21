@@ -5,3 +5,5 @@ keras
 matplotlib
 imutils
 dlib
+gdown
+skimage

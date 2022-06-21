@@ -27,6 +27,28 @@ pip3 install -r requirements.txt
 
 ## 模型介绍
 
+### 8. BASNet
+
+[模型代码](src/basnet.py)
+
+提取图片中前景物体的mask
+
+#### 模型依赖
+
+可以从百度网盘下载，并放置到以下路径
+
+`models/ml4a_basnet/basnet.pth`
+
+还依赖 `resnet34` 运行时联网会自动从pytorch官网下载
+
+#### 运行指令
+
+```shell
+python src/basnet.py
+```
+
+![合成图像](docs/images/basnet_final.png)
+
 ### 7. dlib Face Recognition
 
 [模型代码](src/dlib_face_recognition.py)

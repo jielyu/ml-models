@@ -5,6 +5,7 @@ from pathlib import Path
 import requests
 import shutil
 import zipfile
+import gdown
 
 
 def __process_output_path__(output_path, zip_file):
@@ -43,11 +44,45 @@ def download_data_file(url, output_path, zip_file=False, overwrite=False):
     return output
 
 
-def main():
+def download_from_gdrive(gdrive_fileid, output_path, zip_file=False, overwrite=False):
+    output_folder, output_filename, output_exists = __process_output_path__(
+        output_path, zip_file
+    )
+    if not output_exists or overwrite:
+        Path(output_folder).mkdir(parents=True, exist_ok=True)
+        gdrive_url = "https://drive.google.com/uc?id=%s" % gdrive_fileid
+        gdown.download(gdrive_url, output_filename, quiet=False)
+        if zip_file:
+            unzip(output_filename, output_folder)
+    output = output_folder if zip_file else output_filename
+    return output
+
+
+def test_download_data_file():
     url = "https://storage.googleapis.com/glow-demo/z_manipulate.npy"
     output_path = "./glow/z_manipulate.npy"
     p = download_data_file(url, output_path, zip_file=False)
     print(p)
+
+
+def test_download_from_gdrive():
+    gdrive_field = "1s52ek_4YTDRt_EOkx1FS53u-vJa0c4nu"
+    output_path = "basnet/basnet.pth"
+    p = download_from_gdrive(gdrive_field, output_path, zip_file=False)
+    print(p)
+
+
+def test_download_from_gdrive2():
+    gdrive_field = "1LLV7lyuCPOCDa5c7CkWjSfeckXBou1W7"
+    output_path = "ml4a_basnet/starnight.jpg"
+    p = download_from_gdrive(gdrive_field, output_path, zip_file=False)
+    print(p)
+
+
+def main():
+    # test_download_data_file()
+    # test_download_from_gdrive()
+    test_download_from_gdrive2()
 
 
 if __name__ == "__main__":
