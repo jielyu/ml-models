@@ -27,6 +27,26 @@ pip3 install -r requirements.txt
 
 ## 模型介绍
 
+### 10. Semantic Segmentation
+
+[模型代码](src/semantic_segmentation.py)
+
+对图片实现语义分割的功能，生成各种语意类别的mask
+
+#### 模型依赖
+
+可以从百度网盘下载，并放置到以下路径
+
+`models/ml4a_semantic_segmentation`
+
+#### 运行指令
+
+```shell
+python src/semantic_segmentation.py
+```
+
+![语义分割](docs/images/semantic_segmentation.png)
+
 ### 9. PhotoSketch
 
 [模型代码](src/photosketch.py)
