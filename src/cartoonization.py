@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 import tf_slim as slim
 
-# tf.compat.v1.disable_eager_execution()
+tf.compat.v1.disable_eager_execution()
 
 
 def resblock(inputs, out_channel=32, name="resblock"):
@@ -98,29 +98,22 @@ class Cartoonization:
     def __init__(
         self, model_path="models/ml4a_cartoonization/White-box-Cartoonization"
     ) -> None:
-        tf.compat.v1.disable_eager_execution()
-        x = tf.compat.v1.placeholder(tf.float32, shape=(1024, 1024))
-        print("start")
-        # self.input_photo = tf.compat.v1.placeholder(
-        #     tf.float32, shape=(None, None, None, 3)
-        # )
-        # print("create")
-        # network_out = unet_generator(self.input_photo)
-        # print("filter")
-        # self.final_out = guided_filter(self.input_photo, network_out, r=1, eps=5e-3)
-        # print("end")
-        # # 创建模型载入器
-        # all_vars = tf.compat.v1.trainable_variables()
-        # gene_vars = [var for var in all_vars if "generator" in var.name]
-        # saver = tf.compat.v1.train.Saver(var_list=gene_vars)
-        # # 设置TF的绘画环境
-        # config = tf.compat.v1.ConfigProto()
-        # config.gpu_options.allow_growth = True
-        # self.sess = tf.compat.v1.Session(config=config)
-        # self.sess.run(tf.compat.v1.global_variables_initializer())
-        # print("loading..")
-        # # 载入模型
-        # saver.restore(self.sess, tf.train.latest_checkpoint(model_path))
+        self.input_photo = tf.compat.v1.placeholder(
+            tf.float32, shape=(None, None, None, 3)
+        )
+        network_out = unet_generator(self.input_photo)
+        self.final_out = guided_filter(self.input_photo, network_out, r=1, eps=5e-3)
+        # 创建模型载入器
+        all_vars = tf.compat.v1.trainable_variables()
+        gene_vars = [var for var in all_vars if "generator" in var.name]
+        saver = tf.compat.v1.train.Saver(var_list=gene_vars)
+        # 设置TF的绘画环境
+        config = tf.compat.v1.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.sess = tf.compat.v1.Session(config=config)
+        self.sess.run(tf.compat.v1.global_variables_initializer())
+        # 载入模型
+        saver.restore(self.sess, tf.train.latest_checkpoint(model_path))
 
     def __call__(self, image):
 
