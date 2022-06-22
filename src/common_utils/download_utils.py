@@ -109,9 +109,19 @@ def test_download_cartoonization_model():
     )
 
 
+def test_download_photo_sketch_model():
+    model_subfolder = "ml4a_photosketch/pretrained"
+    download_from_gdrive(
+        "1TQf-LyS8rRDDapdcTnEgWzYJllPgiXdj",
+        model_subfolder,
+        zip_file=True,
+    )
+
+
 def main():
     # test_download_data_file()
-    test_download_cartoonization_model()
+    # test_download_cartoonization_model()
+    test_download_photo_sketch_model()
 
 
 if __name__ == "__main__":

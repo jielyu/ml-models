@@ -27,6 +27,26 @@ pip3 install -r requirements.txt
 
 ## 模型介绍
 
+### 9. PhotoSketch
+
+[模型代码](src/photosketch.py)
+
+将照片转换为简笔画
+
+#### 模型依赖
+
+可以从百度网盘下载，并放置到以下路径
+
+`models/ml4a_photosketch/pretrained`
+
+#### 运行指令
+
+```shell
+python src/photosketch.py
+```
+
+![photosketch](docs/images/photosketch.png)
+
 ### 8. BASNet
 
 [模型代码](src/basnet.py)
