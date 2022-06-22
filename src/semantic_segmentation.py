@@ -1,5 +1,10 @@
 # encoding: utf-8
 
+"""
+参考代码：https://github.com/ml4a/ml4a
+参考代码：https://github.com/CSAILVision/semantic-segmentation-pytorch
+"""
+
 import csv
 import math
 import os
