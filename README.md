@@ -27,6 +27,26 @@ pip3 install -r requirements.txt
 
 ## 模型介绍
 
+### 12. ESRGAN
+
+[模型代码](src/esrgan.py)
+
+生成4x超分辨率图像
+
+#### 模型依赖
+
+可以从百度网盘下载，并放置到以下路径
+
+`models/ml4a_esrgan`
+
+#### 运行指令
+
+```shell
+python src/esrgan.py
+```
+
+![esrgan](docs/images/esrgan.png)
+
 ### 11. Spade
 
 [模型代码](src/spade.py)
