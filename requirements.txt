@@ -9,3 +9,4 @@ gdown
 skimage
 tensorflow
 tf_slim
+collections
