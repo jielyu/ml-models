@@ -2,11 +2,11 @@ pandas
 opencv-python
 numpy
 keras
+torch
+torchvision
 matplotlib
 imutils
 dlib
 gdown
 skimage
-tensorflow
-tf_slim
 collections
