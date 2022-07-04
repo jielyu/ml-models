@@ -960,7 +960,14 @@ class Pix2PixModel(BaseModel):
 
     def forward(self):
         self.real_A = self.input_A
+        print(
+            "input: ",
+            torch.mean(self.real_A),
+            torch.std(self.real_A),
+            self.real_A.dtype,
+        )
         self.fake_B = self.netG(self.real_A)
+        print("after", torch.mean(self.fake_B), torch.std(self.fake_B))
         self.real_B = self.input_B
 
     # no backprop gradients
@@ -1135,5 +1142,48 @@ def main():
     plt.show()
 
 
+def pth2pt():
+    # 载入模型
+    model_path = "models/ml4a_photosketch/pretrained/latest_net_G.pth"
+    device = torch.device("cpu")
+    model = define_G(3, 1, 64, "resnet_9blocks", "batch", False, "normal")
+    model.load_state_dict(torch.load(model_path))
+    model = model.to(device)
+    # 使用eval后结果异常
+    # model.eval()
+    # print_network(model)
+    # 读取图片
+    img_path = "data/photosketch-samples/Valley-Taurus-Mountains-Turkey.jpg"
+    ori_img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+    rgb = cv2.cvtColor(ori_img, cv2.COLOR_BGR2RGB)
+    normal_img = np.array(rgb) / 255.0
+    img = np.transpose(normal_img, (2, 0, 1))
+    img = np.expand_dims(img, 0)
+    img = torch.from_numpy(img).float()
+    with torch.no_grad():
+        # 测试通路是否正常
+        print("input: ", torch.mean(img), torch.std(img), img.dtype)
+        output = model(img)
+        print("after", torch.mean(output), torch.std(output))
+        # 导出libtorch所需的pt文件
+        input = torch.rand(1, 3, 1067, 1600)
+        traced_script_module = torch.jit.trace(model, input)
+        traced_script_module.save("output/photo_sketch.pt")
+        # 导出lite所需的ptl文件
+        traced_script_module._save_for_lite_interpreter("output/photo_sketch.ptl")
+    # 可视化
+    img_sketch = tensor2im(output)
+    plt.subplot(1, 2, 1)
+    plt.imshow(rgb)
+    plt.axis("off")
+    plt.title("Original Image")
+    plt.subplot(1, 2, 2)
+    plt.imshow(img_sketch)
+    plt.axis("off")
+    plt.title("Sketch Image")
+    plt.show()
+
+
 if __name__ == "__main__":
     main()
+    # pth2pt()
