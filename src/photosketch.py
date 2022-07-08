@@ -19,6 +19,7 @@ from torch.autograd import Variable
 import torch.nn as nn
 from torch.nn import init
 from torch.optim import lr_scheduler
+from torch.utils.mobile_optimizer import optimize_for_mobile
 from PIL import Image
 
 
@@ -1170,7 +1171,9 @@ def pth2pt():
         traced_script_module = torch.jit.trace(model, input)
         traced_script_module.save("output/photo_sketch.pt")
         # 导出lite所需的ptl文件
-        traced_script_module._save_for_lite_interpreter("output/photo_sketch.ptl")
+        optimize_for_mobile(traced_script_module)._save_for_lite_interpreter(
+            "output/photo_sketch.ptl"
+        )
     # 可视化
     img_sketch = tensor2im(output)
     plt.subplot(1, 2, 1)
