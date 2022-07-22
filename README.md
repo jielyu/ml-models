@@ -17,12 +17,12 @@ pip3 install -r requirements.txt
 **注意**：如果出现模型缺失的情况，需要下载 `models` 文件夹，
 并放在工程根目录下，即 `models/`
 
-下载地址： [百度网盘](https://pan.baidu.com/s/1L7kbGovNyLAJIcSZVe8eqA) 提取码: gm3s
+下载地址： [百度网盘](https://pan.baidu.com/s/11Q_QOocEblqGcglH5aJs6A?pwd=9emk)
 
 **注意**：如果出现数据集缺失的情况，需要下载 `dataset` 文件夹，
 并放在工程根目录下，即 `dataset/`，并解压对应数据集
 
-下载地址： [百度网盘](https://pan.baidu.com/s/1DjhpK2TAPGJbhXgoHKLt1Q) 提取码: dg82
+下载地址： [百度网盘](https://pan.baidu.com/s/1B1qTWG309_R13fDiGd6mOg?pwd=wuuk)
 
 
 ## 模型介绍
