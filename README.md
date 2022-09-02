@@ -208,7 +208,7 @@ python src/dlib_face_detection.py
 python src/yolox.py --phase train --colab 1 --gpu 1 --batch_size 8
 ```
 
-### 2. small VggNet
+### 2. small VggNet [Deprecated]
 
 [模型代码](src/smallervgg_on_12306verifycode.py)
 
@@ -238,7 +238,7 @@ train_acc=99.0%, val_acc=99.1%, test_acc=95%
 |1|smallervgg_bn_on_12306verifycode|acc=95%|With BN|
 
 
-### 1. VggNet
+### 1. VggNet [Deprecated]
 
 [模型代码](src/vgg_on_celeba.py)
 [CelebA-dataset](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html)
