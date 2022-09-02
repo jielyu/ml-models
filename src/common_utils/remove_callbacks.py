@@ -19,11 +19,11 @@ def remove_callbacks(ckpt_path):
 
 
 def main():
-    root_dir = "/Users/jielyu/CodeStudio/python/ml-models/models/animestylized"
+    root_dir = "root/dir/of/models"
     model_list = [
         "animeganv2/version_0/checkpoints/epoch=17.ckpt",
         "uagtit/version_13/checkpoints/epoch=15.ckpt",
-        "logs/whitebox/version_0/checkpoints/epoch=4.ckpt",
+        "whitebox/version_0/checkpoints/epoch=4.ckpt",
         "whitebox/version_1/checkpoints/epoch=4.ckpt",
         "whitebox/version_2/checkpoints/epoch=6.ckpt",
     ]
