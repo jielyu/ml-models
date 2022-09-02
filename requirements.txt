@@ -4,11 +4,13 @@ gdown
 imutils
 joblib
 keras
+loguru
 matplotlib
 more_itertools
 numpy
 opencv-python
 pandas
+Pillow
 pytorch-lightning
 scipy
 skimage
