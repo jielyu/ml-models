@@ -27,6 +27,84 @@ pip3 install -r requirements.txt
 
 ## 模型介绍
 
+### 14. animestylized
+
+由于官方提供的ckpt依赖特定的工程目录结构，因此无法运行
+
+想要直接运行，可以查看[官方源码](https://github.com/zhen8838/AnimeStylized)
+
+依赖的vgg模型可以从百度网盘下载后放置到 `models/vggnet/vgg19.npy`
+
+#### animegan
+
+测试
+
+```
+python src/animestylized_animegan.py --config None --stage infer --ckpt models/animestylized/animeganv2/version_0/checkpoints/epoch=17.ckpt --extra image_path:data/animestylized-samples/animegan_test2.jpg
+```
+
+![animegan效果](docs/images/animestylized_animegan.png)
+
+数据集 
+
+dataset/animestylized/dataset.zip
+
+预训练
+
+```
+python src/animestylized_animegan_pretrainpy --config configs/animestylized/animegan_pretrain.yaml --stage fit
+```
+
+训练
+
+```
+python src/animestylized_animegan.py --config configs/animestylized/animeganv2.yaml --stage fit
+```
+
+#### whiteboxgan
+
+测试
+
+```
+python src/animestylized_whiteboxgan.py --config None --stage infer --ckpt models/animestylized/whitebox/version_0/checkpoints/epoch=4.ckpt --extra image_path:data/animestylized-samples//whitebox_test.jpg
+```
+
+![whiteboxgan效果](docs/images/animestylized_whiteboxgan.png)
+
+数据集
+
+dataset/animestylized/cvpr_dataset.zip
+
+预训练
+
+```
+python src/animestylized_whitebox_pretrainpy --config configs/animestylized/whitebox_pretrain.yaml --stage fit
+```
+
+训练
+
+```
+python src/animestylized_whiteboxgan.py --config configs/animestylized/whitebox.yaml --stage fit
+```
+
+#### uagtit
+
+只能用于处理人脸
+
+测试
+
+```
+python src/animestylized_uagtit.py --config None --stage infer --ckpt models/animestylized/uagtit/version_13/checkpoints/epoch=15.ckpt --extra image_path:data/animestylized-samples/uagtit_test.png
+```
+
+![uagtit效果](docs/images/animestylized_uagtit.png)
+
+数据集
+
+dataset/animestylized/cvpr_dataset.zip
+
+
+
 ### 13. idinvert
 
 [模型代码](src/idinvert.py)

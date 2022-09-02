@@ -2,11 +2,16 @@ collections
 dlib
 gdown
 imutils
+joblib
 keras
 matplotlib
+more_itertools
 numpy
 opencv-python
 pandas
+pytorch-lightning
+scipy
 skimage
 torch
 torchvision
+yaml
