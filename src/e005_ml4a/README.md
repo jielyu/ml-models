@@ -40,7 +40,7 @@ python src/animestylized_animegan.py --config configs/animestylized/animeganv2.y
 
 #### whiteboxgan
 
-[模型代码](src//animestylized_whiteboxgan.py)
+[模型代码](src/animestylized_whiteboxgan.py)
 
 测试
 
