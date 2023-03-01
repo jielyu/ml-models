@@ -39,6 +39,8 @@ pip3 install -r requirements.txt
 
 #### animegan
 
+[模型代码](src/animestylized_animegan.py)
+
 测试
 
 ```
@@ -65,6 +67,8 @@ python src/animestylized_animegan.py --config configs/animestylized/animeganv2.y
 
 #### whiteboxgan
 
+[模型代码](src//animestylized_whiteboxgan.py)
+
 测试
 
 ```
@@ -90,6 +94,8 @@ python src/animestylized_whiteboxgan.py --config configs/animestylized/whitebox.
 ```
 
 #### uagtit
+
+[模型代码](src/animestylized_uagtit.py)
 
 只能用于处理人脸
 

@@ -1914,8 +1914,8 @@ def parse_args():
     args.add_argument("--img-path", type=str, default=None)
     args.add_argument("--gpu", type=str2bool, default=False)
     args.add_argument("--colab", type=str2bool, default=False)
-    args.add_argument("--data_dir", type=str, default="./dataset")
-    args.add_argument("--output_dir", type=str, default="./YOLOX_outputs")
+    args.add_argument("--data_dir", type=str, default="./data/dataset")
+    args.add_argument("--output_dir", type=str, default="./output/YOLOX_outputs")
     args.add_argument("--batch_size", type=int, default=4)
     args.add_argument("--num_data_worker", type=int, default=4)
     args.add_argument("--no_aug", type=str2bool, default=False)
@@ -1942,9 +1942,10 @@ def main():
     if args.phase == "train":
         exp.train(args.gpu, args.no_aug)
     elif args.phase == "demo":
+        # 设置测试图片
         img_file = "./data/mscoco-sample/000000000139.jpg"
-        # model_file = './YOLOX_outputs/yolox_l.pth'
-        model_file = "./YOLOX_outputs/yolox_epoch_53_ckpt.pth"
+        # 设置模型路径
+        model_file = "./models/yolox/yolox_l.pth"
         exp.demo(
             img_file, model_file, conf_thre=args.conf_thresh, nms_thre=args.nms_thresh
         )

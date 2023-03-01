@@ -1,5 +1,9 @@
 # encoding: utf-8
 
+import sys
+
+sys.path.append("src/")
+
 import os
 import time
 import cv2

@@ -5,6 +5,10 @@
 参考代码：https://github.com/genekogan/SPADE
 """
 
+import sys
+
+sys.path.append("src/")
+
 import importlib
 import os
 import random

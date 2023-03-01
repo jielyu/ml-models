@@ -5,6 +5,9 @@
 参考代码： https://github.com/genforce/idinvert_pytorch
 """
 
+import sys
+
+sys.path.append("src/e003_dlib/")
 
 import os
 from random import sample

@@ -5,6 +5,10 @@
 参考代码： https://github.com/xinntao/ESRGAN
 """
 
+import sys
+
+sys.path.append("src/")
+
 import os
 import time
 import functools

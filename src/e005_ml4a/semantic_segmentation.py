@@ -5,6 +5,10 @@
 参考代码：https://github.com/CSAILVision/semantic-segmentation-pytorch
 """
 
+import sys
+
+sys.path.append("src/")
+
 import csv
 import math
 import os

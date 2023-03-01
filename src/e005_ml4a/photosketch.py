@@ -5,6 +5,10 @@
 参考代码：https://github.com/mtli/PhotoSketch
 """
 
+import sys
+
+sys.path.append("src/")
+
 import os
 import random
 import functools
