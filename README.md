@@ -4,10 +4,10 @@
 
 ## 环境需求
 
-可通过 `requirements.txt` 文件安装所需第三方模块
+可通过 `Pipfile` 文件安装所需第三方模块
 
 ```shell
-pip3 install -r requirements.txt
+pipenv install
 ```
 
 ## 数据依赖
@@ -27,13 +27,13 @@ pip3 install -r requirements.txt
 
 ## 模型介绍
 
-[005 ml4a](src/e005_ml4a/)
+[005 ml4a](src/ml4a/)
 
-[004 yolox](src/e004_yolox/)
+[004 yolox](src/yolox/)
 
-[003 dlib](src/e003_dlib/)
+[003 dlib](src/dlib_face/)
 
-[002 SVM](src/e002_svm/)
+[002 SVM](src/svm/)
 
-[001 VGGNet](src/e001_vgg/)
+[001 VGGNet](src/vggnet/)
 

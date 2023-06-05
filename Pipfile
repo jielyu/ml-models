@@ -18,6 +18,8 @@ loguru = "*"
 joblib = "*"
 imutils = "*"
 gdown = "*"
+dlib = "*"
+pycocotools = "*"
 
 [dev-packages]
 
