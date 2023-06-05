@@ -11,5 +11,9 @@
 #### colab上训练的指令
 
 ```shell
-python src/yolox.py --phase train --colab 1 --gpu 1 --batch_size 8
+python src/e004_yolox/yolox.py --phase train --gpu 1 --batch_size 8
+```
+
+```
+python src/e004_yolox/yolox.py --phase train --gpu 1 --batch_size 16 --data_dir /home/data/Dataset
 ```

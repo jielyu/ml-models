@@ -140,7 +140,7 @@ class COCODataset(Dataset):
         self.json_file = json_file
 
         self.coco = COCO(os.path.join(self.data_dir, "annotations", self.json_file))
-        self.ids = self.coco.getImgIds()
+        self.ids = self.coco.getImgIds()[:110000]
         self.class_ids = sorted(self.coco.getCatIds())
         cats = self.coco.loadCats(self.coco.getCatIds())
         self._classes = tuple([c["name"] for c in cats])
@@ -265,7 +265,7 @@ class COCODataset(Dataset):
     def load_image(self, index):
         file_name = self.annotations[index][3]
 
-        img_file = os.path.join(self.data_dir, self.name, file_name)
+        img_file = os.path.join(self.data_dir, "images", self.name, file_name)
 
         img = cv2.imread(img_file)
         assert img is not None
@@ -273,7 +273,10 @@ class COCODataset(Dataset):
         return img
 
     def pull_item(self, index):
-        id_ = self.ids[index]
+        try:
+            id_ = self.ids[index]
+        except Exception as e:
+            raise ValueError(f"{e}, {len(self.ids)}, {index}")
 
         res, img_info, resized_info, _ = self.annotations[index]
         if self.imgs is not None:
@@ -330,7 +333,6 @@ def postprocess(
 
     output = [None for _ in range(len(prediction))]
     for i, image_pred in enumerate(prediction):
-
         # If none are remaining => process next image
         if not image_pred.size(0):
             continue
@@ -474,7 +476,7 @@ class COCOEvaluator:
 
     def convert_to_coco_format(self, outputs, info_imgs, ids):
         data_list = []
-        for (output, img_h, img_w, img_id) in zip(
+        for output, img_h, img_w, img_id in zip(
             outputs, info_imgs[0], info_imgs[1], ids
         ):
             if output is None:
@@ -505,7 +507,6 @@ class COCOEvaluator:
         return data_list
 
     def evaluate_prediction(self, data_dict, statistics):
-
         logger.info("Evaluate in main process...")
 
         annType = ["segm", "bbox", "keypoints"]

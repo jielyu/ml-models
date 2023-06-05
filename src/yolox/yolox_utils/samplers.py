@@ -73,6 +73,7 @@ class InfiniteSampler(Sampler):
         g.manual_seed(self._seed)
         while True:
             if self._shuffle:
+                print(f"_infinite_indices: {self._size}")
                 yield from torch.randperm(self._size, generator=g)
             else:
                 yield from torch.arange(self._size)

@@ -1,0 +1,25 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+torch = "*"
+torchvision = "*"
+scipy = "*"
+scikit-image = "*"
+pillow = "*"
+pandas = "*"
+numpy = "*"
+matplotlib = "*"
+opencv-python = "*"
+more-itertools = "*"
+loguru = "*"
+joblib = "*"
+imutils = "*"
+gdown = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.10"

@@ -44,7 +44,6 @@ def postprocess(
 
     output = [None for _ in range(len(prediction))]
     for i, image_pred in enumerate(prediction):
-
         # If none are remaining => process next image
         if not image_pred.size(0):
             continue
@@ -1672,6 +1671,7 @@ class Exp:
         # 创建数据载入器
         train_loader = self.get_data_loader(self.batch_size, no_aug)
         num_train_iters = len(train_loader)
+        print(num_train_iters)
         # 创建学习率规划对象
         lr_scheduler = self.get_lr_scheduler(
             self.basic_lr_per_img * self.batch_size, num_train_iters
@@ -1682,12 +1682,13 @@ class Exp:
             self.output_dir, model, optimizer, device
         )
         # 评估断点续训的模型
-        if start_epoch > 0:
-            self.eval(start_model_file, is_gpu=is_gpu)
+        # if start_epoch > 0:
+        #     self.eval(start_model_file, is_gpu=is_gpu)
         # 训练迭代
         for idx_epoch in range(start_epoch, self.max_epoch):
             for idx_iter, batch in enumerate(train_loader):
                 idx_iter = idx_iter % num_train_iters
+                # logger.info(f"{idx_epoch}, {idx_iter}, {num_train_iters}")
                 # 数据转换
                 images, labels = batch[0], batch[1]
                 if is_gpu is True:
@@ -1730,7 +1731,7 @@ class Exp:
             )
             logger.info("save {}-epoch model to {}".format(idx_epoch, model_path))
             # 评估保存下来的模型
-            self.eval(model_path, is_gpu=is_gpu)
+            # self.eval(model_path, is_gpu=is_gpu)
 
     def eval(self, model_file, is_gpu=False):
         """用于评估模型"""
@@ -1782,7 +1783,6 @@ class Exp:
 
         output = [None for _ in range(len(prediction))]
         for i, image_pred in enumerate(prediction):
-
             # If none are remaining => process next image
             if not image_pred.size(0):
                 continue
